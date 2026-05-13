@@ -7,13 +7,18 @@ export class DataService {
   private pool: Pool;
 
   constructor(private configService: ConfigService) {
-    this.pool = new Pool({
-      host: this.configService.get<string>('DB_HOST') || 'localhost',
-      port: parseInt(this.configService.get<string>('DB_PORT') || '5432'),
-      database: this.configService.get<string>('DB_NAME') || 'equipment_booking',
-      user: this.configService.get<string>('DB_USER') || 'postgres',
-      password: this.configService.get<string>('DB_PASSWORD'),
-    });
+    const databaseUrl = process.env.DATABASE_URL;
+    if (databaseUrl) {
+      this.pool = new Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
+    } else {
+      this.pool = new Pool({
+        host: this.configService.get<string>('DB_HOST') || 'localhost',
+        port: parseInt(this.configService.get<string>('DB_PORT') || '5432'),
+        database: this.configService.get<string>('DB_NAME') || 'equipment_booking',
+        user: this.configService.get<string>('DB_USER') || 'postgres',
+        password: this.configService.get<string>('DB_PASSWORD'),
+      });
+    }
   }
 
   private snakeToCamel(obj: any): any {
