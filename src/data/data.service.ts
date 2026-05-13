@@ -454,21 +454,21 @@ export class DataService {
 
 const defaultPermissions: Record<string, string[]> = {
   admin: [
-    '/','  /equipment','/inventory/stock','/bookings/request','/bookings/approve-requests',
+    '/','/equipment','/inventory/stock','/bookings/request','/bookings/approve-requests',
     '/bookings/book','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
-    '/users/manage','/settings',
+    '/users/manage','/settings/permissions','/settings',
   ],
   manager: [
-    '/','  /equipment','/inventory/stock','/bookings/request','/bookings/approve-requests',
+    '/','/equipment','/inventory/stock','/bookings/request','/bookings/approve-requests',
     '/bookings/book','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule','/settings',
   ],
   employee: [
     '/','/bookings/request','/bookings/book','/bookings/cart','/bookings/all','/bookings/returns',
-    '/inventory/stock','/inventory/history','/settings',
+    '/inventory/requisitions','/inventory/stock','/inventory/history','/settings',
   ],
   technician: [
     '/','/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule','/settings',
