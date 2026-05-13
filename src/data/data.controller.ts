@@ -15,14 +15,14 @@ export class DataController {
     return this.dataService.getStockItems({ search, category });
   }
 
-  @Get('stock-items/:id')
-  getStockItemById(@Param('id') id: string) {
-    return this.dataService.getStockItemById(id);
-  }
-
   @Get('stock-items/next-code')
   getNextStockCode() {
     return this.dataService.getNextStockCode();
+  }
+
+  @Get('stock-items/:id')
+  getStockItemById(@Param('id') id: string) {
+    return this.dataService.getStockItemById(id);
   }
 
   @Post('stock-items')

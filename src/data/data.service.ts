@@ -100,11 +100,14 @@ export class DataService {
   }
 
   async updateStockItem(id: string, data: any) {
-    const keys = Object.keys(data);
-    const values = Object.values(data);
+    const allowed = ['name','code','category','unit','quantity','min_quantity','location','description','image_url'];
+    const entries = Object.entries(data).filter(([k, v]) => allowed.includes(k) && v !== undefined);
+    if (entries.length === 0) throw new Error('No valid fields provided');
+    const keys = entries.map(([k]) => k);
+    const values = entries.map(([, v]) => v);
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     return this.queryOne(
-      `UPDATE stock_items SET ${sets} WHERE id = $${keys.length + 1} RETURNING *, COALESCE(name, title) AS name`,
+      `UPDATE stock_items SET ${sets} WHERE id = $${keys.length + 1} RETURNING *`,
       [...values, id],
     );
   }
