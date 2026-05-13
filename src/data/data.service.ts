@@ -71,8 +71,10 @@ export class DataService {
   }
 
   async createStockItem(data: any) {
-    const keys = Object.keys(data);
-    const values = Object.values(data);
+    const allowed = ['name','code','category','unit','quantity','min_quantity','location','description','image_url','title'];
+    const entries = Object.entries(data).filter(([k, v]) => allowed.includes(k) && v !== undefined);
+    const keys = entries.map(([k]) => k);
+    const values = entries.map(([, v]) => v);
     const cols = keys.join(', ');
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
     return this.queryOne(
