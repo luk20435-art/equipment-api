@@ -149,4 +149,15 @@ export class DataController {
   deleteUser(@Param('id') id: string) {
     return this.dataService.deleteUser(id);
   }
+
+  // Permissions
+  @Get('settings/permissions')
+  getPermissions() {
+    return this.dataService.getPermissions();
+  }
+
+  @Post('settings/permissions')
+  savePermissions(@Body() body: { permissions: Record<string, string[]> }) {
+    return this.dataService.savePermissions(body.permissions);
+  }
 }
