@@ -49,7 +49,7 @@ export class DataService {
     let idx = 1;
 
     if (filters?.search) {
-      conditions.push(`(COALESCE(name, title) ILIKE $${idx} OR code ILIKE $${idx} OR category ILIKE $${idx})`);
+      conditions.push(`(name ILIKE $${idx} OR code ILIKE $${idx} OR category ILIKE $${idx})`);
       params.push(`%${filters.search}%`);
       idx++;
     }
@@ -61,17 +61,17 @@ export class DataService {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     return this.query(
-      `SELECT *, COALESCE(name, title) AS name FROM stock_items ${where} ORDER BY COALESCE(name, title)`,
+      `SELECT * FROM stock_items ${where} ORDER BY name`,
       params,
     );
   }
 
   async getStockItemById(id: string) {
-    return this.queryOne(`SELECT *, COALESCE(name, title) AS name FROM stock_items WHERE id = $1`, [id]);
+    return this.queryOne(`SELECT * FROM stock_items WHERE id = $1`, [id]);
   }
 
   async createStockItem(data: any) {
-    const allowed = ['name','code','category','unit','quantity','min_quantity','location','description','image_url','title'];
+    const allowed = ['name','code','category','unit','quantity','min_quantity','location','description','image_url'];
     const entries = Object.entries(data).filter(([k, v]) => allowed.includes(k) && v !== undefined);
     if (entries.length === 0) throw new Error('No valid fields provided');
     const keys = entries.map(([k]) => k);
