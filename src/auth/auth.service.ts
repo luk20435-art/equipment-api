@@ -23,7 +23,7 @@ export class AuthService {
     // Verify password
     const isPasswordValid = await bcrypt.compare(
       password,
-      user.password_hash,
+      user.passwordHash,
     );
 
     if (!isPasswordValid) {
@@ -40,7 +40,7 @@ export class AuthService {
     const token = this.jwtService.sign(payload);
 
     // Return user data (without password) and token
-    const { password_hash, ...userWithoutPassword } = user;
+    const { passwordHash, ...userWithoutPassword } = user;
 
     return {
       user: userWithoutPassword,
@@ -83,7 +83,7 @@ export class AuthService {
       throw new Error(result.error.message);
     }
 
-    const { password_hash: _, ...userWithoutPassword } = result.data;
+    const { passwordHash: _, ...userWithoutPassword } = result.data;
     return userWithoutPassword;
   }
 }
