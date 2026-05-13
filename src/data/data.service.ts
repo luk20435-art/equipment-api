@@ -78,10 +78,25 @@ export class DataService {
     const values = entries.map(([, v]) => v);
     const cols = keys.join(', ');
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-    return this.queryOne(
-      `INSERT INTO stock_items (${cols}) VALUES (${placeholders}) RETURNING *`,
-      values,
+    try {
+      return await this.queryOne(
+        `INSERT INTO stock_items (${cols}) VALUES (${placeholders}) RETURNING *`,
+        values,
+      );
+    } catch (err: any) {
+      if (err.code === '23505') throw new Error(`รหัสสินค้า "${data.code}" มีอยู่แล้ว กรุณาใช้รหัสอื่น`);
+      throw err;
+    }
+  }
+
+  async getNextStockCode(): Promise<string> {
+    const result = await this.pool.query(
+      `SELECT code FROM stock_items WHERE code ~* '^ST[0-9]+$' ORDER BY code DESC LIMIT 1`
     );
+    if (result.rows.length === 0) return 'ST001';
+    const last = result.rows[0].code.toUpperCase().replace('ST', '');
+    const next = parseInt(last, 10) + 1;
+    return `ST${String(next).padStart(3, '0')}`;
   }
 
   async updateStockItem(id: string, data: any) {

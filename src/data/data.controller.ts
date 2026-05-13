@@ -20,6 +20,11 @@ export class DataController {
     return this.dataService.getStockItemById(id);
   }
 
+  @Get('stock-items/next-code')
+  getNextStockCode() {
+    return this.dataService.getNextStockCode();
+  }
+
   @Post('stock-items')
   createStockItem(@Body() data: any) {
     return this.dataService.createStockItem(data);
