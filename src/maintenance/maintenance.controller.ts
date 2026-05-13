@@ -1,0 +1,48 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { MaintenanceService } from './maintenance.service';
+
+@UseGuards(JwtAuthGuard)
+
+@Controller('maintenance')
+export class MaintenanceController {
+  constructor(private readonly maintenanceService: MaintenanceService) {}
+
+  @Get()
+  async findAll(@Query('status') status?: string) {
+    return this.maintenanceService.findAll({ status });
+  }
+
+  @Post()
+  async create(@Body() data: any) {
+    return this.maintenanceService.create(data);
+  }
+
+  @Put(':id')
+  async update(@Param('id') id: string, @Body() data: any) {
+    return this.maintenanceService.update(id, data);
+  }
+
+  @Post(':id/start')
+  async start(@Param('id') id: string) {
+    return this.maintenanceService.start(id);
+  }
+
+  @Post(':id/complete')
+  async complete(
+    @Param('id') id: string,
+    @Body('notes') notes?: string,
+    @Body('cost') cost?: number,
+  ) {
+    return this.maintenanceService.complete(id, notes, cost);
+  }
+}
