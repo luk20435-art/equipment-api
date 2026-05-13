@@ -73,6 +73,7 @@ export class DataService {
   async createStockItem(data: any) {
     const allowed = ['name','code','category','unit','quantity','min_quantity','location','description','image_url','title'];
     const entries = Object.entries(data).filter(([k, v]) => allowed.includes(k) && v !== undefined);
+    if (entries.length === 0) throw new Error('No valid fields provided');
     const keys = entries.map(([k]) => k);
     const values = entries.map(([, v]) => v);
     const cols = keys.join(', ');
