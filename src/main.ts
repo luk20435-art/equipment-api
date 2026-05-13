@@ -2,7 +2,6 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import * as bodyParser from 'body-parser';
-import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: false });
@@ -15,8 +14,6 @@ async function bootstrap() {
     if (req.method === 'OPTIONS') return res.sendStatus(200);
     next();
   });
-
-  app.use(helmet({ crossOriginResourcePolicy: false }));
 
   // Increase request body size limit
   app.use(bodyParser.json({ limit: '50mb' }));
