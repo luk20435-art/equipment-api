@@ -7,22 +7,24 @@ export class DbService {
   private pool: Pool;
 
   constructor(private configService: ConfigService) {
-    this.pool = new Pool({
-      host: this.configService.get<string>('DB_HOST') || 'localhost',
-      port: parseInt(this.configService.get<string>('DB_PORT') || '5432'),
-      database: this.configService.get<string>('DB_NAME') || 'equipment_booking',
-      user: this.configService.get<string>('DB_USER') || 'postgres',
-      password: this.configService.get<string>('DB_PASSWORD'),
-    });
+    const databaseUrl = process.env.DATABASE_URL;
+    if (databaseUrl) {
+      this.pool = new Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
+      console.log('--- Database: Railway PostgreSQL (DATABASE_URL) ---');
+    } else {
+      this.pool = new Pool({
+        host: this.configService.get<string>('DB_HOST') || 'localhost',
+        port: parseInt(this.configService.get<string>('DB_PORT') || '5432'),
+        database: this.configService.get<string>('DB_NAME') || 'equipment_booking',
+        user: this.configService.get<string>('DB_USER') || 'postgres',
+        password: this.configService.get<string>('DB_PASSWORD'),
+      });
+      console.log(`--- Database: ${this.configService.get('DB_HOST') || 'localhost'}/${this.configService.get('DB_NAME') || 'equipment_booking'} ---`);
+    }
 
     this.pool.on('error', (err) => {
       console.error('PostgreSQL pool error:', err.message);
     });
-
-    console.log('--- Database Config ---');
-    console.log(`Host: ${this.configService.get('DB_HOST') || 'localhost'}:${this.configService.get('DB_PORT') || 5432}`);
-    console.log(`Database: ${this.configService.get('DB_NAME') || 'equipment_booking'}`);
-    console.log('----------------------');
 
     this.pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source VARCHAR(50) DEFAULT 'cart'`).catch(() => {});
     this.pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`).catch(() => {});
