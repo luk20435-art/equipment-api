@@ -471,6 +471,16 @@ export class DataService {
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    // Sync equipment quantity to match actual unit count
+    if (filters?.equipmentId) {
+      await this.pool.query(
+        `UPDATE equipment SET
+           quantity = (SELECT COUNT(*) FROM equipment_units WHERE equipment_id = $1),
+           available_quantity = (SELECT COUNT(*) FROM equipment_units WHERE equipment_id = $1 AND status = 'available')
+         WHERE id = $1`,
+        [filters.equipmentId],
+      );
+    }
     const sql = `
       SELECT eu.*,
         (SELECT COUNT(*) FROM bookings b
