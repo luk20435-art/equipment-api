@@ -42,6 +42,24 @@ export class DataService {
     return this.snakeToCamel(result.rows[0] || null);
   }
 
+  private toLegacyRole(role?: string): string {
+    if (!role) return 'employee';
+    if (role === 'admin') return 'admin';
+    if (role === 'executive') return 'manager';
+    if (role === 'dept_head') return 'technician';
+    if (role === 'user') return 'employee';
+    return role;
+  }
+
+  private toAppRole(role?: string): string {
+    if (!role) return 'user';
+    if (role === 'admin') return 'admin';
+    if (role === 'manager') return 'executive';
+    if (role === 'technician') return 'dept_head';
+    if (role === 'employee') return 'user';
+    return role;
+  }
+
   // Stock Items
   async getStockItems(filters?: { search?: string; category?: string }) {
     const conditions: string[] = [];
@@ -498,26 +516,57 @@ export class DataService {
 
   // Users
   async getUsers() {
-    return this.query(`SELECT id, name, email, role, department, is_active, created_at FROM users ORDER BY name`);
+    const rows = await this.query(`SELECT id, name, email, role, department, is_active, created_at FROM users ORDER BY name`);
+    return Array.isArray(rows)
+      ? rows.map((u: any) => ({ ...u, role: this.toAppRole(u.role) }))
+      : rows;
   }
 
   async createUserAccount(data: { name: string; email: string; role: string; department?: string; password_hash: string }) {
-    return this.queryOne(
-      `INSERT INTO users (id, name, email, role, department, is_active, password_hash, created_at, updated_at)
-       VALUES (gen_random_uuid(), $1, $2, $3, $4, true, $5, NOW(), NOW()) RETURNING id, name, email, role, department, is_active, created_at`,
-      [data.name, data.email, data.role, data.department ?? null, data.password_hash],
-    );
+    try {
+      const row = await this.queryOne(
+        `INSERT INTO users (id, name, email, role, department, is_active, password_hash, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, true, $5, NOW(), NOW()) RETURNING id, name, email, role, department, is_active, created_at`,
+        [data.name, data.email, data.role, data.department ?? null, data.password_hash],
+      );
+      return row ? { ...row, role: this.toAppRole((row as any).role) } : row;
+    } catch (err: any) {
+      if (err?.code === '23514' && String(err?.constraint || '').includes('users_role_check')) {
+        const legacyRole = this.toLegacyRole(data.role);
+        const row = await this.queryOne(
+          `INSERT INTO users (id, name, email, role, department, is_active, password_hash, created_at, updated_at)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, true, $5, NOW(), NOW()) RETURNING id, name, email, role, department, is_active, created_at`,
+          [data.name, data.email, legacyRole, data.department ?? null, data.password_hash],
+        );
+        return row ? { ...row, role: this.toAppRole((row as any).role) } : row;
+      }
+      throw err;
+    }
   }
 
   async updateUserAccount(id: string, data: { name?: string; role?: string; department?: string; is_active?: boolean }) {
     const keys = Object.keys(data).filter((k) => (data as any)[k] !== undefined);
     if (keys.length === 0) return this.queryOne(`SELECT id, name, email, role, department, is_active FROM users WHERE id = $1`, [id]);
-    const values = keys.map((k) => (data as any)[k]);
+    const values = keys.map((k) => (k === 'role' ? (data as any)[k] : (data as any)[k]));
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
-    return this.queryOne(
-      `UPDATE users SET ${sets}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING id, name, email, role, department, is_active`,
-      [...values, id],
-    );
+    try {
+      const row = await this.queryOne(
+        `UPDATE users SET ${sets}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING id, name, email, role, department, is_active`,
+        [...values, id],
+      );
+      return row ? { ...row, role: this.toAppRole((row as any).role) } : row;
+    } catch (err: any) {
+      if (err?.code === '23514' && String(err?.constraint || '').includes('users_role_check') && data.role) {
+        const legacyData = { ...data, role: this.toLegacyRole(data.role) };
+        const legacyValues = keys.map((k) => (legacyData as any)[k]);
+        const row = await this.queryOne(
+          `UPDATE users SET ${sets}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING id, name, email, role, department, is_active`,
+          [...legacyValues, id],
+        );
+        return row ? { ...row, role: this.toAppRole((row as any).role) } : row;
+      }
+      throw err;
+    }
   }
 
   async deleteUser(id: string) {

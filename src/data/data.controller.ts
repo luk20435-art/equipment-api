@@ -152,7 +152,7 @@ export class DataController {
   async createUser(@Body() body: { name: string; email: string; role: string; department?: string; password: string }) {
     if (!body.name || !body.email || !body.password) throw new BadRequestException('name, email and password are required');
     const password_hash = await bcrypt.hash(body.password, 10);
-    return this.dataService.createUserAccount({ name: body.name, email: body.email, role: body.role ?? 'employee', department: body.department, password_hash });
+    return this.dataService.createUserAccount({ name: body.name, email: body.email, role: body.role ?? 'user', department: body.department, password_hash });
   }
 
   @Put('users/:id')
