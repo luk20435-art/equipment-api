@@ -719,7 +719,7 @@ const defaultPermissions: Record<string, string[]> = {
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
   ],
   user: [
-    '/request/equipment','/request/supplies','/request/cart-equipment','/request/cart-supplies',
+    '/request/equipment','/request/supplies',
     '/bookings/returns',
   ],
 };
