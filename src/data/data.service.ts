@@ -396,20 +396,56 @@ export class DataService {
 
   // Equipment Units
   async createEquipmentUnit(data: { equipment_id: string; unit_code?: string; serial_number?: string; notes?: string }) {
-    const maxResult = await this.pool.query(
-      `SELECT COALESCE(MAX(unit_no), 0) + 1 AS next_no FROM equipment_units WHERE equipment_id = $1`,
-      [data.equipment_id],
-    );
-    const nextNo = maxResult.rows[0].next_no;
-    return this.queryOne(
-      `INSERT INTO equipment_units (equipment_id, unit_no, unit_code, serial_number, status, notes)
-       VALUES ($1, $2, $3, $4, 'available', $5) RETURNING *`,
-      [data.equipment_id, nextNo, data.unit_code ?? null, data.serial_number ?? null, data.notes ?? null],
-    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const maxResult = await client.query(
+        `SELECT COALESCE(MAX(unit_no), 0) + 1 AS next_no FROM equipment_units WHERE equipment_id = $1`,
+        [data.equipment_id],
+      );
+      const nextNo = maxResult.rows[0].next_no;
+      const unitResult = await client.query(
+        `INSERT INTO equipment_units (equipment_id, unit_no, unit_code, serial_number, status, notes)
+         VALUES ($1, $2, $3, $4, 'available', $5) RETURNING *`,
+        [data.equipment_id, nextNo, data.unit_code ?? null, data.serial_number ?? null, data.notes ?? null],
+      );
+      await client.query(
+        `UPDATE equipment SET quantity = quantity + 1, available_quantity = available_quantity + 1 WHERE id = $1`,
+        [data.equipment_id],
+      );
+      await client.query('COMMIT');
+      return this.snakeToCamel(unitResult.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async deleteEquipmentUnit(id: string) {
-    return this.queryOne(`DELETE FROM equipment_units WHERE id = $1 RETURNING *`, [id]);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const unitResult = await client.query(
+        `DELETE FROM equipment_units WHERE id = $1 RETURNING *`, [id],
+      );
+      if (unitResult.rows.length > 0) {
+        const unit = unitResult.rows[0];
+        const availableDelta = unit.status === 'available' ? 1 : 0;
+        await client.query(
+          `UPDATE equipment SET quantity = GREATEST(0, quantity - 1), available_quantity = GREATEST(0, available_quantity - $1) WHERE id = $2`,
+          [availableDelta, unit.equipment_id],
+        );
+      }
+      await client.query('COMMIT');
+      return this.snakeToCamel(unitResult.rows[0] ?? null);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async updateEquipmentUnit(id: string, data: { unit_code?: string; serial_number?: string; total_usage_hours?: number; notes?: string; status?: string }) {
