@@ -395,6 +395,23 @@ export class DataService {
   }
 
   // Equipment Units
+  async createEquipmentUnit(data: { equipment_id: string; unit_code?: string; serial_number?: string; notes?: string }) {
+    const maxResult = await this.pool.query(
+      `SELECT COALESCE(MAX(unit_no), 0) + 1 AS next_no FROM equipment_units WHERE equipment_id = $1`,
+      [data.equipment_id],
+    );
+    const nextNo = maxResult.rows[0].next_no;
+    return this.queryOne(
+      `INSERT INTO equipment_units (equipment_id, unit_no, unit_code, serial_number, status, notes)
+       VALUES ($1, $2, $3, $4, 'available', $5) RETURNING *`,
+      [data.equipment_id, nextNo, data.unit_code ?? null, data.serial_number ?? null, data.notes ?? null],
+    );
+  }
+
+  async deleteEquipmentUnit(id: string) {
+    return this.queryOne(`DELETE FROM equipment_units WHERE id = $1 RETURNING *`, [id]);
+  }
+
   async updateEquipmentUnit(id: string, data: { unit_code?: string; serial_number?: string; total_usage_hours?: number; notes?: string; status?: string }) {
     const keys = Object.keys(data).filter((k) => (data as any)[k] !== undefined);
     if (keys.length === 0) return this.queryOne(`SELECT * FROM equipment_units WHERE id = $1`, [id]);
@@ -419,7 +436,12 @@ export class DataService {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const sql = `
-      SELECT eu.*, row_to_json(e.*) as equipment
+      SELECT eu.*,
+        (SELECT COUNT(*) FROM bookings b
+         WHERE b.equipment_id = eu.equipment_id
+           AND b.status IN ('completed','active')
+        ) AS booking_count,
+        row_to_json(e.*) AS equipment
       FROM equipment_units eu
       LEFT JOIN equipment e ON eu.equipment_id = e.id
       ${where}

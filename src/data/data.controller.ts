@@ -127,9 +127,19 @@ export class DataController {
     return this.dataService.getEquipmentUnits({ equipmentId });
   }
 
+  @Post('equipment-units')
+  createEquipmentUnit(@Body() data: any) {
+    return this.dataService.createEquipmentUnit(data);
+  }
+
   @Put('equipment-units/:id')
   updateEquipmentUnit(@Param('id') id: string, @Body() data: any) {
     return this.dataService.updateEquipmentUnit(id, data);
+  }
+
+  @Delete('equipment-units/:id')
+  deleteEquipmentUnit(@Param('id') id: string) {
+    return this.dataService.deleteEquipmentUnit(id);
   }
 
   // Users
