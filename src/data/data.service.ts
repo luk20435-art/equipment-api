@@ -539,27 +539,187 @@ export class DataService {
     );
     return { message: 'Saved' };
   }
+
+  // ============================================================
+  // User Requests (ผู้ใช้ขอใช้อุปกรณ์/วัสดุ)
+  // ============================================================
+
+  async getUserRequests(filters?: { status?: string; userId?: string }) {
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let idx = 1;
+    if (filters?.status) { conditions.push(`r.status = $${idx++}`); params.push(filters.status); }
+    if (filters?.userId) { conditions.push(`r.user_id = $${idx++}`); params.push(filters.userId); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    const rows = await this.pool.query(`
+      SELECT r.*,
+        u.name AS user_name, u.email AS user_email, u.department AS user_department,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', ri.id, 'item_type', ri.item_type,
+              'quantity', ri.quantity, 'notes', ri.notes,
+              'equipment_id', ri.equipment_id, 'stock_item_id', ri.stock_item_id,
+              'equipment_name', eq.name, 'equipment_code', eq.code,
+              'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit,
+              'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
+              'fulfilled_quantity', ri.fulfilled_quantity
+            ) ORDER BY ri.created_at
+          ) FILTER (WHERE ri.id IS NOT NULL), '[]'
+        ) AS items
+      FROM user_requests r
+      LEFT JOIN users u ON u.id = r.user_id
+      LEFT JOIN user_request_items ri ON ri.request_id = r.id
+      LEFT JOIN equipment eq ON eq.id = ri.equipment_id
+      LEFT JOIN stock_items si ON si.id = ri.stock_item_id
+      ${where}
+      GROUP BY r.id, u.name, u.email, u.department
+      ORDER BY r.created_at DESC
+    `, params);
+    return this.snakeToCamel(rows.rows);
+  }
+
+  async createUserRequest(data: {
+    user_id: string;
+    type: string;
+    purpose: string;
+    items: { item_type: string; equipment_id?: string; stock_item_id?: string; quantity: number; notes?: string }[];
+  }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const reqResult = await client.query(
+        `INSERT INTO user_requests (user_id, type, purpose) VALUES ($1, $2, $3) RETURNING *`,
+        [data.user_id, data.type, data.purpose],
+      );
+      const requestId = reqResult.rows[0].id;
+      for (const item of data.items) {
+        await client.query(
+          `INSERT INTO user_request_items (request_id, item_type, equipment_id, stock_item_id, quantity, notes)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [requestId, item.item_type, item.equipment_id || null, item.stock_item_id || null, item.quantity, item.notes || null],
+        );
+      }
+      await client.query('COMMIT');
+      return this.snakeToCamel(reqResult.rows[0]);
+    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+  }
+
+  async approveUserRequest(id: string, approvedBy: string) {
+    const result = await this.pool.query(
+      `UPDATE user_requests SET status = 'approved', approved_by = $2, approved_at = NOW(), updated_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [id, approvedBy],
+    );
+    return this.snakeToCamel(result.rows[0]);
+  }
+
+  async rejectUserRequest(id: string, reason: string) {
+    const result = await this.pool.query(
+      `UPDATE user_requests SET status = 'rejected', rejected_reason = $2, updated_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [id, reason],
+    );
+    return this.snakeToCamel(result.rows[0]);
+  }
+
+  async fulfillUserRequest(id: string, fulfilledBy: string, fulfillments: {
+    item_id: string;
+    unit_ids?: string[];      // equipment: serial unit IDs assigned
+    fulfilled_quantity?: number; // supply: qty deducted
+  }[]) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const f of fulfillments) {
+        const itemRow = await client.query(`SELECT * FROM user_request_items WHERE id = $1`, [f.item_id]);
+        if (!itemRow.rows[0]) continue;
+        const item = itemRow.rows[0];
+
+        if (item.item_type === 'equipment' && f.unit_ids?.length) {
+          // Create a booking for each assigned unit
+          const reqRow = await client.query(`SELECT * FROM user_requests WHERE id = $1`, [id]);
+          const req = reqRow.rows[0];
+          const bookingResult = await client.query(
+            `INSERT INTO bookings (equipment_id, user_id, quantity, start_date, end_date, purpose, status, approved_by, approved_at, booking_source)
+             VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '30 days', $4, 'active', $5, NOW(), 'user_request')
+             RETURNING id`,
+            [item.equipment_id, req.user_id, f.unit_ids.length, req.purpose, fulfilledBy],
+          );
+          await client.query(
+            `UPDATE user_request_items SET booking_id = $1, fulfilled_quantity = $2 WHERE id = $3`,
+            [bookingResult.rows[0].id, f.unit_ids.length, f.item_id],
+          );
+          // Update unit statuses to 'booked'
+          for (const uid of f.unit_ids) {
+            await client.query(`UPDATE equipment_units SET status = 'booked' WHERE id = $1`, [uid]);
+          }
+          // Sync equipment available_quantity
+          await client.query(
+            `UPDATE equipment SET available_quantity = (SELECT COUNT(*) FROM equipment_units WHERE equipment_id = $1 AND status = 'available') WHERE id = $1`,
+            [item.equipment_id],
+          );
+        } else if (item.item_type === 'supply' && f.fulfilled_quantity) {
+          // Create requisition and deduct stock
+          const reqRow = await client.query(`SELECT * FROM user_requests WHERE id = $1`, [id]);
+          const req = reqRow.rows[0];
+          const reqnResult = await client.query(
+            `INSERT INTO requisitions (stock_item_id, user_id, quantity, purpose, status, approved_by, approved_at)
+             VALUES ($1, $2, $3, $4, 'approved', $5, NOW())
+             RETURNING id`,
+            [item.stock_item_id, req.user_id, f.fulfilled_quantity, req.purpose, fulfilledBy],
+          );
+          await client.query(
+            `UPDATE stock_items SET quantity = GREATEST(0, quantity - $1) WHERE id = $2`,
+            [f.fulfilled_quantity, item.stock_item_id],
+          );
+          await client.query(
+            `UPDATE user_request_items SET requisition_id = $1, fulfilled_quantity = $2 WHERE id = $3`,
+            [reqnResult.rows[0].id, f.fulfilled_quantity, f.item_id],
+          );
+        }
+      }
+
+      await client.query(
+        `UPDATE user_requests SET status = 'fulfilled', fulfilled_by = $2, fulfilled_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [id, fulfilledBy],
+      );
+      await client.query('COMMIT');
+      return { message: 'Fulfilled' };
+    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+  }
 }
 
 const defaultPermissions: Record<string, string[]> = {
   admin: [
-    '/','/equipment','/inventory/stock','/bookings/request','/bookings/approve-requests',
-    '/bookings/book','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
+    '/','/equipment','/inventory/stock',
+    '/request/equipment','/request/supplies','/request/cart-equipment','/request/cart-supplies',
+    '/bookings/approve-requests','/bookings/fulfill',
+    '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
     '/users/manage','/settings/permissions','/settings',
   ],
-  manager: [
-    '/','/equipment','/inventory/stock','/bookings/request','/bookings/approve-requests',
-    '/bookings/book','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
+  executive: [
+    '/','/equipment','/inventory/stock',
+    '/bookings/approve-requests','/bookings/fulfill',
+    '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
-    '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule','/settings',
+    '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
+    '/users/manage','/settings/permissions','/settings',
   ],
-  employee: [
-    '/','/bookings/request','/bookings/book','/bookings/cart','/bookings/all','/bookings/returns',
-    '/inventory/requisitions','/inventory/stock','/inventory/history','/settings',
+  dept_head: [
+    '/','/equipment','/inventory/stock',
+    '/bookings/approve-requests','/bookings/fulfill',
+    '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
+    '/inventory/requisitions','/inventory/approve','/inventory/history',
+    '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
   ],
-  technician: [
-    '/','/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule','/settings',
+  user: [
+    '/request/equipment','/request/supplies','/request/cart-equipment','/request/cart-supplies',
+    '/bookings/returns',
   ],
 };

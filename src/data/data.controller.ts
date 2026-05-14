@@ -175,4 +175,30 @@ export class DataController {
   savePermissions(@Body() body: { permissions: Record<string, string[]> }) {
     return this.dataService.savePermissions(body.permissions);
   }
+
+  // User Requests (ผู้ใช้ขอใช้อุปกรณ์/วัสดุ)
+  @Get('user-requests')
+  getUserRequests(@Query('status') status?: string, @Query('userId') userId?: string) {
+    return this.dataService.getUserRequests({ status, userId });
+  }
+
+  @Post('user-requests')
+  createUserRequest(@Body() data: any) {
+    return this.dataService.createUserRequest(data);
+  }
+
+  @Post('user-requests/:id/approve')
+  approveUserRequest(@Param('id') id: string, @Body() body: { approvedBy: string }) {
+    return this.dataService.approveUserRequest(id, body.approvedBy);
+  }
+
+  @Post('user-requests/:id/reject')
+  rejectUserRequest(@Param('id') id: string, @Body() body: { reason: string }) {
+    return this.dataService.rejectUserRequest(id, body.reason);
+  }
+
+  @Post('user-requests/:id/fulfill')
+  fulfillUserRequest(@Param('id') id: string, @Body() body: { fulfilledBy: string; fulfillments: any[] }) {
+    return this.dataService.fulfillUserRequest(id, body.fulfilledBy, body.fulfillments);
+  }
 }
