@@ -42,6 +42,28 @@ export class DataService {
     return this.snakeToCamel(result.rows[0] || null);
   }
 
+  async getUserRequestsTableHealth() {
+    const result = await this.pool.query(
+      `SELECT
+         to_regclass('public.user_requests')      AS user_requests,
+         to_regclass('public.user_request_items') AS user_request_items`,
+    );
+    const row = result.rows[0] || {};
+    const hasUserRequests = !!row.user_requests;
+    const hasUserRequestItems = !!row.user_request_items;
+    const ready = hasUserRequests && hasUserRequestItems;
+    return {
+      ready,
+      tables: {
+        user_requests: hasUserRequests,
+        user_request_items: hasUserRequestItems,
+      },
+      message: ready
+        ? 'user request tables are ready'
+        : 'missing tables: run migration for user_requests and user_request_items',
+    };
+  }
+
   private toLegacyRole(role?: string): string {
     if (!role) return 'employee';
     if (role === 'admin') return 'admin';
@@ -600,32 +622,40 @@ export class DataService {
     if (filters?.status) { conditions.push(`r.status = $${idx++}`); params.push(filters.status); }
     if (filters?.userId) { conditions.push(`r.user_id = $${idx++}`); params.push(filters.userId); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    const rows = await this.pool.query(`
-      SELECT r.*,
-        u.name AS user_name, u.email AS user_email, u.department AS user_department,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', ri.id, 'item_type', ri.item_type,
-              'quantity', ri.quantity, 'notes', ri.notes,
-              'equipment_id', ri.equipment_id, 'stock_item_id', ri.stock_item_id,
-              'equipment_name', eq.name, 'equipment_code', eq.code,
-              'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit,
-              'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
-              'fulfilled_quantity', ri.fulfilled_quantity
-            ) ORDER BY ri.created_at
-          ) FILTER (WHERE ri.id IS NOT NULL), '[]'
-        ) AS items
-      FROM user_requests r
-      LEFT JOIN users u ON u.id = r.user_id
-      LEFT JOIN user_request_items ri ON ri.request_id = r.id
-      LEFT JOIN equipment eq ON eq.id = ri.equipment_id
-      LEFT JOIN stock_items si ON si.id = ri.stock_item_id
-      ${where}
-      GROUP BY r.id, u.name, u.email, u.department
-      ORDER BY r.created_at DESC
-    `, params);
-    return this.snakeToCamel(rows.rows);
+    try {
+      const rows = await this.pool.query(`
+        SELECT r.*,
+          u.name AS user_name, u.email AS user_email, u.department AS user_department,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', ri.id, 'item_type', ri.item_type,
+                'quantity', ri.quantity, 'notes', ri.notes,
+                'equipment_id', ri.equipment_id, 'stock_item_id', ri.stock_item_id,
+                'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url,
+                'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit, 'stock_image_url', si.image_url,
+                'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
+                'fulfilled_quantity', ri.fulfilled_quantity
+              ) ORDER BY ri.created_at
+            ) FILTER (WHERE ri.id IS NOT NULL), '[]'
+          ) AS items
+        FROM user_requests r
+        LEFT JOIN users u ON u.id = r.user_id
+        LEFT JOIN user_request_items ri ON ri.request_id = r.id
+        LEFT JOIN equipment eq ON eq.id = ri.equipment_id
+        LEFT JOIN stock_items si ON si.id = ri.stock_item_id
+        ${where}
+        GROUP BY r.id, u.name, u.email, u.department
+        ORDER BY r.created_at DESC
+      `, params);
+      return this.snakeToCamel(rows.rows);
+    } catch (err: any) {
+      if (err?.code === '42P01') {
+        // user_requests table not migrated yet: keep API alive for frontend
+        return [];
+      }
+      throw err;
+    }
   }
 
   async createUserRequest(data: {
@@ -651,7 +681,13 @@ export class DataService {
       }
       await client.query('COMMIT');
       return this.snakeToCamel(reqResult.rows[0]);
-    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      if (err?.code === '42P01') {
+        throw new Error('ยังไม่พร้อมใช้งาน: กรุณารัน migration ตาราง user_requests ก่อน');
+      }
+      throw err;
+    }
     finally { client.release(); }
   }
 
