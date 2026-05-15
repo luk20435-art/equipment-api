@@ -744,14 +744,20 @@ export class DataService {
             [item.equipment_id],
           );
         } else if (item.item_type === 'supply' && f.fulfilled_quantity) {
-          // Deduct stock and create requisition immediately for consumable supplies
+          // Deduct stock and create requisition (header + item row) for consumable supplies
           const reqRow = await client.query(`SELECT * FROM user_requests WHERE id = $1`, [id]);
           const req = reqRow.rows[0];
           const reqnResult = await client.query(
-            `INSERT INTO requisitions (stock_item_id, user_id, quantity, purpose, status, approved_by, approved_at)
-             VALUES ($1, $2, $3, $4, 'approved', $5, NOW())
+            `INSERT INTO requisitions (user_id, status, notes)
+             VALUES ($1, 'approved', $2)
              RETURNING id`,
-            [item.stock_item_id, req.user_id, f.fulfilled_quantity, req.purpose, fulfilledBy],
+            [req.user_id, req.purpose || null],
+          );
+          const reqnId = reqnResult.rows[0].id;
+          await client.query(
+            `INSERT INTO requisition_items (requisition_id, stock_item_id, quantity)
+             VALUES ($1, $2, $3)`,
+            [reqnId, item.stock_item_id, f.fulfilled_quantity],
           );
           await client.query(
             `UPDATE stock_items SET quantity = GREATEST(0, quantity - $1) WHERE id = $2`,
@@ -759,7 +765,7 @@ export class DataService {
           );
           await client.query(
             `UPDATE user_request_items SET requisition_id = $1, fulfilled_quantity = $2 WHERE id = $3`,
-            [reqnResult.rows[0].id, f.fulfilled_quantity, f.item_id],
+            [reqnId, f.fulfilled_quantity, f.item_id],
           );
         }
       }
