@@ -644,10 +644,11 @@ export class DataService {
     `;
   }
 
-  async getUserRequests(filters?: { status?: string; userId?: string; type?: string }) {
+  async getUserRequests(filters?: { status?: string; userId?: string; type?: string; id?: string }) {
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
+    if (filters?.id)     { conditions.push(`r.id = $${idx++}`);     params.push(filters.id); }
     if (filters?.status) { conditions.push(`r.status = $${idx++}`); params.push(filters.status); }
     if (filters?.userId) { conditions.push(`r.user_id = $${idx++}`); params.push(filters.userId); }
     if (filters?.type)   { conditions.push(`r.type = $${idx++}`);   params.push(filters.type); }
