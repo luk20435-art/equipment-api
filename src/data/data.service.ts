@@ -635,7 +635,8 @@ export class DataService {
                 'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url,
                 'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit, 'stock_image_url', si.image_url,
                 'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
-                'fulfilled_quantity', ri.fulfilled_quantity
+                'fulfilled_quantity', ri.fulfilled_quantity,
+                'unit_ids', ri.unit_ids
               ) ORDER BY ri.created_at
             ) FILTER (WHERE ri.id IS NOT NULL), '[]'
           ) AS items
@@ -711,8 +712,8 @@ export class DataService {
 
   async fulfillUserRequest(id: string, fulfilledBy: string, fulfillments: {
     item_id: string;
-    unit_ids?: string[];      // equipment: serial unit IDs assigned
-    fulfilled_quantity?: number; // supply: qty deducted
+    unit_ids?: string[];
+    fulfilled_quantity?: number;
   }[]) {
     const client = await this.pool.connect();
     try {
@@ -724,30 +725,20 @@ export class DataService {
         const item = itemRow.rows[0];
 
         if (item.item_type === 'equipment' && f.unit_ids?.length) {
-          // Create a booking for each assigned unit
-          const reqRow = await client.query(`SELECT * FROM user_requests WHERE id = $1`, [id]);
-          const req = reqRow.rows[0];
-          const bookingResult = await client.query(
-            `INSERT INTO bookings (equipment_id, user_id, quantity, start_date, end_date, purpose, status, approved_by, approved_at, booking_source)
-             VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '30 days', $4, 'active', $5, NOW(), 'user_request')
-             RETURNING id`,
-            [item.equipment_id, req.user_id, f.unit_ids.length, req.purpose, fulfilledBy],
-          );
+          // Store unit assignments and reserve units — booking created after receipt confirmation
           await client.query(
-            `UPDATE user_request_items SET booking_id = $1, fulfilled_quantity = $2 WHERE id = $3`,
-            [bookingResult.rows[0].id, f.unit_ids.length, f.item_id],
+            `UPDATE user_request_items SET unit_ids = $1, fulfilled_quantity = $2 WHERE id = $3`,
+            [JSON.stringify(f.unit_ids), f.unit_ids.length, f.item_id],
           );
-          // Update unit statuses to 'booked'
           for (const uid of f.unit_ids) {
-            await client.query(`UPDATE equipment_units SET status = 'booked' WHERE id = $1`, [uid]);
+            await client.query(`UPDATE equipment_units SET status = 'reserved' WHERE id = $1`, [uid]);
           }
-          // Sync equipment available_quantity
           await client.query(
             `UPDATE equipment SET available_quantity = (SELECT COUNT(*) FROM equipment_units WHERE equipment_id = $1 AND status = 'available') WHERE id = $1`,
             [item.equipment_id],
           );
         } else if (item.item_type === 'supply' && f.fulfilled_quantity) {
-          // Create requisition and deduct stock
+          // Deduct stock and create requisition immediately for consumable supplies
           const reqRow = await client.query(`SELECT * FROM user_requests WHERE id = $1`, [id]);
           const req = reqRow.rows[0];
           const reqnResult = await client.query(
@@ -768,11 +759,56 @@ export class DataService {
       }
 
       await client.query(
-        `UPDATE user_requests SET status = 'fulfilled', fulfilled_by = $2, fulfilled_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        `UPDATE user_requests SET status = 'waiting_pickup', fulfilled_by = $2, fulfilled_at = NOW(), updated_at = NOW() WHERE id = $1`,
         [id, fulfilledBy],
       );
       await client.query('COMMIT');
-      return { message: 'Fulfilled' };
+      return { message: 'Prepared for pickup' };
+    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+  }
+
+  async receiveUserRequest(id: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const reqRow = await client.query(`SELECT * FROM user_requests WHERE id = $1`, [id]);
+      if (!reqRow.rows[0]) throw new Error('Request not found');
+      const req = reqRow.rows[0];
+
+      const itemsRow = await client.query(`SELECT * FROM user_request_items WHERE request_id = $1`, [id]);
+      for (const item of itemsRow.rows) {
+        if (item.item_type === 'equipment' && item.unit_ids) {
+          const unitIds: string[] = Array.isArray(item.unit_ids) ? item.unit_ids : JSON.parse(item.unit_ids);
+          if (unitIds.length === 0) continue;
+          const bookingResult = await client.query(
+            `INSERT INTO bookings (equipment_id, user_id, quantity, start_date, end_date, purpose, status, approved_by, approved_at, booking_source)
+             VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '30 days', $4, 'active', $5, NOW(), 'user_request')
+             RETURNING id`,
+            [item.equipment_id, req.user_id, unitIds.length, req.purpose, req.fulfilled_by],
+          );
+          await client.query(
+            `UPDATE user_request_items SET booking_id = $1 WHERE id = $2`,
+            [bookingResult.rows[0].id, item.id],
+          );
+          for (const uid of unitIds) {
+            await client.query(`UPDATE equipment_units SET status = 'booked' WHERE id = $1`, [uid]);
+          }
+          await client.query(
+            `UPDATE equipment SET available_quantity = (SELECT COUNT(*) FROM equipment_units WHERE equipment_id = $1 AND status = 'available') WHERE id = $1`,
+            [item.equipment_id],
+          );
+        }
+        // Supply items: already deducted at fulfill time, nothing more to do
+      }
+
+      await client.query(
+        `UPDATE user_requests SET status = 'fulfilled', updated_at = NOW() WHERE id = $1`,
+        [id],
+      );
+      await client.query('COMMIT');
+      return { message: 'Received' };
     } catch (err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
   }
@@ -781,8 +817,8 @@ export class DataService {
 const defaultPermissions: Record<string, string[]> = {
   admin: [
     '/','/equipment','/inventory/stock',
-    '/request/equipment','/request/supplies','/request/cart-equipment','/request/cart-supplies',
-    '/bookings/approve-requests','/bookings/fulfill',
+    '/request/equipment','/request/supplies','/request/status','/request/cart-equipment','/request/cart-supplies',
+    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup',
     '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
@@ -790,7 +826,7 @@ const defaultPermissions: Record<string, string[]> = {
   ],
   executive: [
     '/','/equipment','/inventory/stock',
-    '/bookings/approve-requests','/bookings/fulfill',
+    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup',
     '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
@@ -798,13 +834,15 @@ const defaultPermissions: Record<string, string[]> = {
   ],
   dept_head: [
     '/','/equipment','/inventory/stock',
-    '/bookings/approve-requests','/bookings/fulfill',
+    '/request/equipment','/request/supplies','/request/status',
+    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup',
     '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
   ],
   user: [
-    '/request/equipment','/request/supplies',
+    '/request/equipment','/request/supplies','/request/status',
     '/bookings/returns',
   ],
 };
+

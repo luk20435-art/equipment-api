@@ -201,4 +201,9 @@ export class DataController {
   fulfillUserRequest(@Param('id') id: string, @Body() body: { fulfilledBy: string; fulfillments: any[] }) {
     return this.dataService.fulfillUserRequest(id, body.fulfilledBy, body.fulfillments);
   }
+
+  @Post('user-requests/:id/receive')
+  receiveUserRequest(@Param('id') id: string) {
+    return this.dataService.receiveUserRequest(id);
+  }
 }
