@@ -1,4 +1,5 @@
 ALTER TABLE user_requests
+  ADD COLUMN IF NOT EXISTS manifest_to          TEXT,
   ADD COLUMN IF NOT EXISTS manifest_doc_no      TEXT,
   ADD COLUMN IF NOT EXISTS manifest_date        DATE,
   ADD COLUMN IF NOT EXISTS manifest_attn        TEXT,

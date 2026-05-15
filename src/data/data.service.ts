@@ -629,7 +629,15 @@ export class DataService {
               'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url,
               'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit, 'stock_image_url', si.image_url,
               'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
-              'fulfilled_quantity', ri.fulfilled_quantity${unitIdsField}
+              'fulfilled_quantity', ri.fulfilled_quantity${unitIdsField},
+              'unit_details', (
+                SELECT COALESCE(json_agg(json_build_object(
+                  'id', eu.id, 'unit_code', eu.unit_code, 'serial_number', eu.serial_number, 'unit_no', eu.unit_no
+                ) ORDER BY eu.unit_no), '[]')
+                FROM equipment_units eu
+                WHERE ri.unit_ids IS NOT NULL
+                  AND eu.id::text = ANY(SELECT jsonb_array_elements_text(ri.unit_ids::jsonb))
+              )
             ) ORDER BY ri.created_at
           ) FILTER (WHERE ri.id IS NOT NULL), '[]'
         ) AS items
@@ -727,7 +735,7 @@ export class DataService {
     unit_ids?: string[];
     fulfilled_quantity?: number;
   }[], manifest?: {
-    doc_no?: string; date?: string; attn?: string; cc?: string;
+    to?: string; doc_no?: string; date?: string; attn?: string; cc?: string;
     carrier?: string; truck?: string; on?: string; ref?: string; responsible?: string;
   }) {
     const client = await this.pool.connect();
@@ -782,14 +790,15 @@ export class DataService {
       await client.query(
         `UPDATE user_requests
          SET status = 'waiting_pickup', fulfilled_by = $2, fulfilled_at = NOW(), updated_at = NOW(),
-             manifest_doc_no = $3, manifest_date = $4, manifest_attn = $5, manifest_cc = $6,
-             manifest_carrier = $7, manifest_truck = $8, manifest_on = $9, manifest_ref = $10,
-             manifest_responsible = $11
+             manifest_to = $3, manifest_doc_no = $4, manifest_date = $5, manifest_attn = $6, manifest_cc = $7,
+             manifest_carrier = $8, manifest_truck = $9, manifest_on = $10, manifest_ref = $11,
+             manifest_responsible = $12
          WHERE id = $1`,
         [id, fulfilledBy,
-         manifest?.doc_no || null, manifest?.date || null, manifest?.attn || null,
-         manifest?.cc || null, manifest?.carrier || null, manifest?.truck || null,
-         manifest?.on || null, manifest?.ref || null, manifest?.responsible || null],
+         manifest?.to || null, manifest?.doc_no || null, manifest?.date || null,
+         manifest?.attn || null, manifest?.cc || null, manifest?.carrier || null,
+         manifest?.truck || null, manifest?.on || null, manifest?.ref || null,
+         manifest?.responsible || null],
       );
       await client.query('COMMIT');
       return { message: 'Prepared for pickup' };
