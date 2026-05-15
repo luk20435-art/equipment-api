@@ -671,14 +671,18 @@ export class DataService {
     user_id: string;
     type: string;
     purpose: string;
+    project_name?: string;
+    start_date?: string;
+    end_date?: string;
     items: { item_type: string; equipment_id?: string; stock_item_id?: string; quantity: number; notes?: string }[];
   }) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       const reqResult = await client.query(
-        `INSERT INTO user_requests (user_id, type, purpose) VALUES ($1, $2, $3) RETURNING *`,
-        [data.user_id, data.type, data.purpose],
+        `INSERT INTO user_requests (user_id, type, purpose, project_name, start_date, end_date)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [data.user_id, data.type, data.purpose, data.project_name || null, data.start_date || null, data.end_date || null],
       );
       const requestId = reqResult.rows[0].id;
       for (const item of data.items) {
