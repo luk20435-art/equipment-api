@@ -644,12 +644,13 @@ export class DataService {
     `;
   }
 
-  async getUserRequests(filters?: { status?: string; userId?: string }) {
+  async getUserRequests(filters?: { status?: string; userId?: string; type?: string }) {
     const conditions: string[] = [];
     const params: any[] = [];
     let idx = 1;
     if (filters?.status) { conditions.push(`r.status = $${idx++}`); params.push(filters.status); }
     if (filters?.userId) { conditions.push(`r.user_id = $${idx++}`); params.push(filters.userId); }
+    if (filters?.type)   { conditions.push(`r.type = $${idx++}`);   params.push(filters.type); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     try {
       const rows = await this.pool.query(this.buildUserRequestsQuery(where, true), params);

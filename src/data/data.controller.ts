@@ -178,8 +178,8 @@ export class DataController {
 
   // User Requests (ผู้ใช้ขอใช้อุปกรณ์/วัสดุ)
   @Get('user-requests')
-  getUserRequests(@Query('status') status?: string, @Query('userId') userId?: string) {
-    return this.dataService.getUserRequests({ status, userId });
+  getUserRequests(@Query('status') status?: string, @Query('userId') userId?: string, @Query('type') type?: string) {
+    return this.dataService.getUserRequests({ status, userId, type });
   }
 
   @Post('user-requests')
