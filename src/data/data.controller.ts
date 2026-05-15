@@ -206,4 +206,19 @@ export class DataController {
   receiveUserRequest(@Param('id') id: string) {
     return this.dataService.receiveUserRequest(id);
   }
+
+  @Post('user-requests/:id/start-return')
+  startReturnUserRequest(@Param('id') id: string) {
+    return this.dataService.startReturnUserRequest(id);
+  }
+
+  @Post('user-requests/:id/return')
+  returnUserRequest(@Param('id') id: string) {
+    return this.dataService.returnUserRequest(id);
+  }
+
+  @Post('user-requests/:id/complete')
+  completeUserRequest(@Param('id') id: string) {
+    return this.dataService.completeUserRequest(id);
+  }
 }

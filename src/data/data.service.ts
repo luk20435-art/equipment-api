@@ -809,12 +809,71 @@ export class DataService {
         // Supply items: already deducted at fulfill time, nothing more to do
       }
 
+      // Supply → completed immediately; Equipment → in_use (user received, booking active)
+      const newStatus = req.type === 'supply' ? 'completed' : 'in_use';
       await client.query(
-        `UPDATE user_requests SET status = 'fulfilled', updated_at = NOW() WHERE id = $1`,
-        [id],
+        `UPDATE user_requests SET status = $1, updated_at = NOW() WHERE id = $2`,
+        [newStatus, id],
       );
       await client.query('COMMIT');
       return { message: 'Received' };
+    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+  }
+
+  async startReturnUserRequest(id: string) {
+    const result = await this.pool.query(
+      `UPDATE user_requests SET status = 'pending_return', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id],
+    );
+    return this.snakeToCamel(result.rows[0]);
+  }
+
+  async returnUserRequest(id: string) {
+    const result = await this.pool.query(
+      `UPDATE user_requests SET status = 'returning', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id],
+    );
+    return this.snakeToCamel(result.rows[0]);
+  }
+
+  async completeUserRequest(id: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Complete all associated bookings
+      await client.query(
+        `UPDATE bookings SET status = 'completed', updated_at = NOW()
+         WHERE id IN (SELECT booking_id FROM user_request_items WHERE request_id = $1 AND booking_id IS NOT NULL)`,
+        [id],
+      );
+
+      // Free equipment units back to available
+      const itemsResult = await client.query(
+        `SELECT unit_ids, equipment_id FROM user_request_items
+         WHERE request_id = $1 AND item_type = 'equipment' AND unit_ids IS NOT NULL`,
+        [id],
+      );
+      for (const item of itemsResult.rows) {
+        const unitIds: string[] = Array.isArray(item.unit_ids) ? item.unit_ids : JSON.parse(item.unit_ids || '[]');
+        for (const uid of unitIds) {
+          await client.query(`UPDATE equipment_units SET status = 'available' WHERE id = $1`, [uid]);
+        }
+        if (item.equipment_id) {
+          await client.query(
+            `UPDATE equipment SET available_quantity = (SELECT COUNT(*) FROM equipment_units WHERE equipment_id = $1 AND status = 'available') WHERE id = $1`,
+            [item.equipment_id],
+          );
+        }
+      }
+
+      await client.query(
+        `UPDATE user_requests SET status = 'completed', updated_at = NOW() WHERE id = $1`,
+        [id],
+      );
+      await client.query('COMMIT');
+      return { message: 'Completed' };
     } catch (err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
   }
@@ -824,7 +883,7 @@ const defaultPermissions: Record<string, string[]> = {
   admin: [
     '/','/equipment','/inventory/stock',
     '/request/equipment','/request/supplies','/request/status','/request/cart-equipment','/request/cart-supplies',
-    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup',
+    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup','/bookings/return-inspection',
     '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
@@ -832,7 +891,7 @@ const defaultPermissions: Record<string, string[]> = {
   ],
   executive: [
     '/','/equipment','/inventory/stock',
-    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup',
+    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup','/bookings/return-inspection',
     '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
@@ -841,7 +900,7 @@ const defaultPermissions: Record<string, string[]> = {
   dept_head: [
     '/','/equipment','/inventory/stock',
     '/request/equipment','/request/supplies','/request/status',
-    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup',
+    '/bookings/approve-requests','/bookings/fulfill','/bookings/waiting-pickup','/bookings/return-inspection',
     '/bookings/book','/bookings/cart','/bookings/approve','/bookings/all','/bookings/returns','/bookings/inspection',
     '/inventory/requisitions','/inventory/approve','/inventory/history',
     '/maintenance/request','/maintenance/work-orders','/maintenance/pm-schedule',
