@@ -615,6 +615,35 @@ export class DataService {
   // User Requests (ผู้ใช้ขอใช้อุปกรณ์/วัสดุ)
   // ============================================================
 
+  private buildUserRequestsQuery(where: string, includeUnitIds: boolean) {
+    const unitIdsField = includeUnitIds ? `, 'unit_ids', ri.unit_ids` : '';
+    return `
+      SELECT r.*,
+        u.name AS user_name, u.email AS user_email, u.department AS user_department,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', ri.id, 'item_type', ri.item_type,
+              'quantity', ri.quantity, 'notes', ri.notes,
+              'equipment_id', ri.equipment_id, 'stock_item_id', ri.stock_item_id,
+              'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url,
+              'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit, 'stock_image_url', si.image_url,
+              'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
+              'fulfilled_quantity', ri.fulfilled_quantity${unitIdsField}
+            ) ORDER BY ri.created_at
+          ) FILTER (WHERE ri.id IS NOT NULL), '[]'
+        ) AS items
+      FROM user_requests r
+      LEFT JOIN users u ON u.id = r.user_id
+      LEFT JOIN user_request_items ri ON ri.request_id = r.id
+      LEFT JOIN equipment eq ON eq.id = ri.equipment_id
+      LEFT JOIN stock_items si ON si.id = ri.stock_item_id
+      ${where}
+      GROUP BY r.id, u.name, u.email, u.department
+      ORDER BY r.created_at DESC
+    `;
+  }
+
   async getUserRequests(filters?: { status?: string; userId?: string }) {
     const conditions: string[] = [];
     const params: any[] = [];
@@ -623,37 +652,14 @@ export class DataService {
     if (filters?.userId) { conditions.push(`r.user_id = $${idx++}`); params.push(filters.userId); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     try {
-      const rows = await this.pool.query(`
-        SELECT r.*,
-          u.name AS user_name, u.email AS user_email, u.department AS user_department,
-          COALESCE(
-            json_agg(
-              json_build_object(
-                'id', ri.id, 'item_type', ri.item_type,
-                'quantity', ri.quantity, 'notes', ri.notes,
-                'equipment_id', ri.equipment_id, 'stock_item_id', ri.stock_item_id,
-                'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url,
-                'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit, 'stock_image_url', si.image_url,
-                'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
-                'fulfilled_quantity', ri.fulfilled_quantity,
-                'unit_ids', ri.unit_ids
-              ) ORDER BY ri.created_at
-            ) FILTER (WHERE ri.id IS NOT NULL), '[]'
-          ) AS items
-        FROM user_requests r
-        LEFT JOIN users u ON u.id = r.user_id
-        LEFT JOIN user_request_items ri ON ri.request_id = r.id
-        LEFT JOIN equipment eq ON eq.id = ri.equipment_id
-        LEFT JOIN stock_items si ON si.id = ri.stock_item_id
-        ${where}
-        GROUP BY r.id, u.name, u.email, u.department
-        ORDER BY r.created_at DESC
-      `, params);
+      const rows = await this.pool.query(this.buildUserRequestsQuery(where, true), params);
       return this.snakeToCamel(rows.rows);
     } catch (err: any) {
-      if (err?.code === '42P01') {
-        // user_requests table not migrated yet: keep API alive for frontend
-        return [];
+      if (err?.code === '42P01') return [];
+      if (err?.code === '42703') {
+        // unit_ids column not yet migrated — fall back to query without it
+        const rows = await this.pool.query(this.buildUserRequestsQuery(where, false), params);
+        return this.snakeToCamel(rows.rows);
       }
       throw err;
     }
