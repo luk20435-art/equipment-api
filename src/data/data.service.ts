@@ -726,7 +726,10 @@ export class DataService {
     item_id: string;
     unit_ids?: string[];
     fulfilled_quantity?: number;
-  }[]) {
+  }[], manifest?: {
+    doc_no?: string; date?: string; attn?: string; cc?: string;
+    carrier?: string; truck?: string; on?: string; ref?: string; responsible?: string;
+  }) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -777,8 +780,16 @@ export class DataService {
       }
 
       await client.query(
-        `UPDATE user_requests SET status = 'waiting_pickup', fulfilled_by = $2, fulfilled_at = NOW(), updated_at = NOW() WHERE id = $1`,
-        [id, fulfilledBy],
+        `UPDATE user_requests
+         SET status = 'waiting_pickup', fulfilled_by = $2, fulfilled_at = NOW(), updated_at = NOW(),
+             manifest_doc_no = $3, manifest_date = $4, manifest_attn = $5, manifest_cc = $6,
+             manifest_carrier = $7, manifest_truck = $8, manifest_on = $9, manifest_ref = $10,
+             manifest_responsible = $11
+         WHERE id = $1`,
+        [id, fulfilledBy,
+         manifest?.doc_no || null, manifest?.date || null, manifest?.attn || null,
+         manifest?.cc || null, manifest?.carrier || null, manifest?.truck || null,
+         manifest?.on || null, manifest?.ref || null, manifest?.responsible || null],
       );
       await client.query('COMMIT');
       return { message: 'Prepared for pickup' };
