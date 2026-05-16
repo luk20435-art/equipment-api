@@ -931,6 +931,63 @@ export class DataService {
     } catch (err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
   }
+
+  // ============================================================
+  // Inventory / Equipment Status
+  // ============================================================
+
+  async getEquipmentInventory(equipmentId?: string) {
+    const conditions = equipmentId ? 'WHERE eq.id = $1' : '';
+    const params = equipmentId ? [equipmentId] : [];
+    const result = await this.pool.query(`
+      SELECT
+        eq.id            AS equipment_id,
+        eq.category,
+        eq.code          AS equipment_code,
+        eq.name          AS equipment_name,
+        eu.id            AS unit_id,
+        eu.unit_no,
+        eu.unit_code,
+        eu.serial_number,
+        eu.total_usage_hours,
+        eu.status        AS unit_status,
+        req.manifest_ref,
+        req.manifest_doc_no,
+        req.manifest_on,
+        req.manifest_to,
+        req.manifest_date,
+        req.project_name,
+        req.start_date,
+        req.end_date,
+        req.purpose,
+        req.fulfilled_quantity,
+        req.request_status,
+        req.updated_at   AS request_updated_at
+      FROM equipment eq
+      JOIN equipment_units eu ON eu.equipment_id = eq.id
+      LEFT JOIN LATERAL (
+        SELECT
+          ri.fulfilled_quantity,
+          ur.manifest_ref, ur.manifest_doc_no, ur.manifest_on,
+          ur.manifest_to, ur.manifest_date, ur.project_name,
+          ur.start_date, ur.end_date, ur.purpose,
+          ur.status AS request_status,
+          ur.updated_at
+        FROM user_request_items ri
+        JOIN user_requests ur ON ur.id = ri.request_id
+        WHERE ri.unit_ids IS NOT NULL
+          AND eu.id::text = ANY(
+            SELECT jsonb_array_elements_text(ri.unit_ids::jsonb)
+          )
+          AND ur.status NOT IN ('pending', 'rejected')
+        ORDER BY ur.created_at DESC
+        LIMIT 1
+      ) req ON true
+      ${conditions}
+      ORDER BY eq.category, eq.code, eu.unit_no NULLS LAST
+    `, params);
+    return this.snakeToCamel(result.rows);
+  }
 }
 
 const defaultPermissions: Record<string, string[]> = {

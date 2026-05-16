@@ -226,4 +226,10 @@ export class DataController {
   completeUserRequest(@Param('id') id: string, @Body() body: { inspectionResults?: any[] }) {
     return this.dataService.completeUserRequest(id, body.inspectionResults);
   }
+
+  // Inventory / Equipment Status
+  @Get('inventory/equipment-status')
+  getEquipmentInventory(@Query('equipmentId') equipmentId?: string) {
+    return this.dataService.getEquipmentInventory(equipmentId || undefined);
+  }
 }
