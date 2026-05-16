@@ -1,0 +1,3 @@
+ALTER TABLE equipment
+  ADD COLUMN IF NOT EXISTS trade_name  TEXT,
+  ADD COLUMN IF NOT EXISTS dimensions  TEXT;

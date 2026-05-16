@@ -945,6 +945,8 @@ export class DataService {
         eq.category,
         eq.code          AS equipment_code,
         eq.name          AS equipment_name,
+        eq.trade_name,
+        eq.dimensions,
         eu.id            AS unit_id,
         eu.unit_no,
         eu.unit_code,
