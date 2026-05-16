@@ -213,8 +213,8 @@ export class DataController {
   }
 
   @Post('user-requests/:id/start-return')
-  startReturnUserRequest(@Param('id') id: string) {
-    return this.dataService.startReturnUserRequest(id);
+  startReturnUserRequest(@Param('id') id: string, @Body() body: { returnItems?: any[] }) {
+    return this.dataService.startReturnUserRequest(id, body.returnItems);
   }
 
   @Post('user-requests/:id/return')
@@ -223,7 +223,7 @@ export class DataController {
   }
 
   @Post('user-requests/:id/complete')
-  completeUserRequest(@Param('id') id: string) {
-    return this.dataService.completeUserRequest(id);
+  completeUserRequest(@Param('id') id: string, @Body() body: { inspectionResults?: any[] }) {
+    return this.dataService.completeUserRequest(id, body.inspectionResults);
   }
 }

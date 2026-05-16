@@ -853,10 +853,10 @@ export class DataService {
     finally { client.release(); }
   }
 
-  async startReturnUserRequest(id: string) {
+  async startReturnUserRequest(id: string, returnItems?: any[]) {
     const result = await this.pool.query(
-      `UPDATE user_requests SET status = 'pending_return', updated_at = NOW() WHERE id = $1 RETURNING *`,
-      [id],
+      `UPDATE user_requests SET status = 'pending_return', return_notes = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id, returnItems ? JSON.stringify(returnItems) : null],
     );
     return this.snakeToCamel(result.rows[0]);
   }
@@ -869,7 +869,7 @@ export class DataService {
     return this.snakeToCamel(result.rows[0]);
   }
 
-  async completeUserRequest(id: string) {
+  async completeUserRequest(id: string, inspectionResults?: { unit_id?: string; equipment_id?: string; name?: string; condition: 'good' | 'damaged'; note?: string }[]) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -881,16 +881,23 @@ export class DataService {
         [id],
       );
 
-      // Free equipment units back to available
+      // Free equipment units — good → available, damaged → maintenance
       const itemsResult = await client.query(
         `SELECT unit_ids, equipment_id FROM user_request_items
          WHERE request_id = $1 AND item_type = 'equipment' AND unit_ids IS NOT NULL`,
         [id],
       );
+      const damagedEquipmentIds = new Set<string>();
       for (const item of itemsResult.rows) {
         const unitIds: string[] = Array.isArray(item.unit_ids) ? item.unit_ids : JSON.parse(item.unit_ids || '[]');
         for (const uid of unitIds) {
-          await client.query(`UPDATE equipment_units SET status = 'available' WHERE id = $1`, [uid]);
+          const result = inspectionResults?.find((r) => r.unit_id === uid);
+          const isDamaged = result?.condition === 'damaged';
+          await client.query(
+            `UPDATE equipment_units SET status = $1 WHERE id = $2`,
+            [isDamaged ? 'maintenance' : 'available', uid],
+          );
+          if (isDamaged && item.equipment_id) damagedEquipmentIds.add(item.equipment_id);
         }
         if (item.equipment_id) {
           await client.query(
@@ -900,12 +907,27 @@ export class DataService {
         }
       }
 
+      // Auto-create maintenance records for damaged items
+      const createdMaintenanceIds: string[] = [];
+      if (inspectionResults) {
+        for (const r of inspectionResults) {
+          if (r.condition === 'damaged' && r.equipment_id) {
+            const mResult = await client.query(
+              `INSERT INTO maintenance (equipment_id, type, description, status, scheduled_date, created_at, updated_at)
+               VALUES ($1, 'repair', $2, 'scheduled', NOW()::date, NOW(), NOW()) RETURNING id`,
+              [r.equipment_id, r.note ? `${r.name || ''}: ${r.note}` : `ชำรุดจากการส่งคืน — ${r.name || ''}`],
+            );
+            createdMaintenanceIds.push(mResult.rows[0].id);
+          }
+        }
+      }
+
       await client.query(
         `UPDATE user_requests SET status = 'completed', updated_at = NOW() WHERE id = $1`,
         [id],
       );
       await client.query('COMMIT');
-      return { message: 'Completed' };
+      return { message: 'Completed', hasDamaged: createdMaintenanceIds.length > 0 };
     } catch (err) { await client.query('ROLLBACK'); throw err; }
     finally { client.release(); }
   }
