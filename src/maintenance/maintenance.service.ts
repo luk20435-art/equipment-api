@@ -32,12 +32,7 @@ export class MaintenanceService {
   }
 
   async update(id: string, data: any) {
-    const updateData = {
-      ...data,
-      updated_at: new Date().toISOString(),
-    };
-
-    const result = await this.supabaseService.updateMaintenance(id, updateData);
+    const result = await this.supabaseService.updateMaintenance(id, data);
     
     if (result.error) {
       throw new NotFoundException('Maintenance record not found');
