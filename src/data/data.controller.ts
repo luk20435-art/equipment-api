@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DataService } from './data.service';
@@ -205,6 +205,11 @@ export class DataController {
   @Post('user-requests/:id/fulfill')
   fulfillUserRequest(@Param('id') id: string, @Body() body: { fulfilledBy: string; fulfillments: any[]; manifest?: any }) {
     return this.dataService.fulfillUserRequest(id, body.fulfilledBy, body.fulfillments, body.manifest);
+  }
+
+  @Patch('user-requests/:id/manifest')
+  updateManifest(@Param('id') id: string, @Body() body: any) {
+    return this.dataService.updateManifest(id, body);
   }
 
   @Post('user-requests/:id/receive')

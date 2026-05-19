@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, ForbiddenException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
@@ -9,6 +9,14 @@ export class AuthController {
   @Post('login')
   async login(@Body() body: { email: string; password: string }) {
     return this.authService.login(body.email, body.password);
+  }
+
+  @Post('dev-login')
+  async devLogin(@Body() body: { email: string }) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Not available in production');
+    }
+    return this.authService.devLogin(body.email);
   }
 
   @Post('register')

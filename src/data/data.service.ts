@@ -932,6 +932,33 @@ export class DataService {
     finally { client.release(); }
   }
 
+  async updateManifest(id: string, fields: {
+    manifest_to?: string; manifest_doc_no?: string; manifest_date?: string;
+    manifest_attn?: string; manifest_cc?: string; manifest_carrier?: string;
+    manifest_truck?: string; manifest_on?: string; manifest_ref?: string;
+    manifest_responsible?: string;
+  }) {
+    const result = await this.pool.query(
+      `UPDATE user_requests SET
+        manifest_to = $2, manifest_doc_no = $3, manifest_date = $4,
+        manifest_attn = $5, manifest_cc = $6, manifest_carrier = $7,
+        manifest_truck = $8, manifest_on = $9, manifest_ref = $10,
+        manifest_responsible = $11,
+        manifest_rev_no = COALESCE(manifest_rev_no, 0) + 1,
+        manifest_seq_no = CASE WHEN manifest_seq_no IS NULL
+          THEN (SELECT COALESCE(MAX(manifest_seq_no), 0) + 1 FROM user_requests)
+          ELSE manifest_seq_no END,
+        updated_at = NOW()
+       WHERE id = $1 RETURNING *`,
+      [id,
+       fields.manifest_to ?? null, fields.manifest_doc_no ?? null, fields.manifest_date ?? null,
+       fields.manifest_attn ?? null, fields.manifest_cc ?? null, fields.manifest_carrier ?? null,
+       fields.manifest_truck ?? null, fields.manifest_on ?? null, fields.manifest_ref ?? null,
+       fields.manifest_responsible ?? null],
+    );
+    return this.snakeToCamel(result.rows[0]);
+  }
+
   // ============================================================
   // Inventory / Equipment Status
   // ============================================================

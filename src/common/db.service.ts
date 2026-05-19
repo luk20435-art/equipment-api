@@ -138,7 +138,9 @@ export class DbService {
 
   async updateEquipment(id: string, data: any) {
     const keys = Object.keys(data);
-    const values = Object.values(data);
+    const values = Object.values(data).map((v) =>
+      v !== null && typeof v === 'object' ? JSON.stringify(v) : v,
+    );
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     return this.queryOne(
       `UPDATE equipment SET ${sets}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING *`,

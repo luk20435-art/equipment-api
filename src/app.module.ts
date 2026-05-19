@@ -11,7 +11,7 @@ import { DbService } from './common/db.service';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env', 
+      envFilePath: '.env',
     }),
     AuthModule,
     EquipmentModule,

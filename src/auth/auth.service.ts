@@ -59,6 +59,18 @@ export class AuthService {
     return userWithoutPassword;
   }
 
+  async devLogin(email: string) {
+    const result = await this.supabaseService.getUserByEmail(email);
+    if (result.error || !result.data) {
+      throw new UnauthorizedException('ไม่พบผู้ใช้งาน: ' + email);
+    }
+    const user = result.data;
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    const token = this.jwtService.sign(payload);
+    const { passwordHash, ...userWithoutPassword } = user;
+    return { user: userWithoutPassword, token };
+  }
+
   async register(data: {
     email: string;
     password: string;
