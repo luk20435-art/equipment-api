@@ -192,6 +192,11 @@ export class DataController {
     return this.dataService.getUserRequestStats();
   }
 
+  @Get('user-requests/monthly-stats')
+  getMonthlyBookingStats() {
+    return this.dataService.getMonthlyBookingStats();
+  }
+
   @Get('user-requests/calendar')
   getBookingsCalendar() {
     return this.dataService.getBookingsCalendar();

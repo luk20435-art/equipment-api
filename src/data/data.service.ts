@@ -1007,6 +1007,31 @@ export class DataService {
   // Dashboard KPI (user requests stats)
   // ============================================================
 
+  async getMonthlyBookingStats() {
+    try {
+      const result = await this.pool.query(`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE status = 'completed')        AS completed,
+          COUNT(*) FILTER (WHERE status = 'rejected')         AS rejected
+        FROM user_requests
+        WHERE type = 'equipment'
+          AND created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', created_at)
+        ORDER BY DATE_TRUNC('month', created_at)
+      `);
+      return result.rows.map(r => ({
+        month:     r.month as string,
+        total:     parseInt(r.total, 10),
+        completed: parseInt(r.completed, 10),
+        rejected:  parseInt(r.rejected, 10),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   async getUserRequestStats() {
     try {
       const result = await this.pool.query(`
