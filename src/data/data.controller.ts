@@ -122,6 +122,11 @@ export class DataController {
   }
 
   // Equipment Units
+  @Get('equipment-units/history')
+  getUnitHistory(@Query('unitCode') unitCode: string) {
+    return this.dataService.getUnitHistory(unitCode);
+  }
+
   @Get('equipment-units')
   getEquipmentUnits(@Query('equipmentId') equipmentId?: string) {
     return this.dataService.getEquipmentUnits({ equipmentId });
@@ -182,6 +187,16 @@ export class DataController {
     return this.dataService.getUserRequests({ status, userId, type });
   }
 
+  @Get('user-requests/stats')
+  getUserRequestStats() {
+    return this.dataService.getUserRequestStats();
+  }
+
+  @Get('user-requests/calendar')
+  getBookingsCalendar() {
+    return this.dataService.getBookingsCalendar();
+  }
+
   @Get('user-requests/next-doc-no')
   getNextManifestDocNo() {
     return this.dataService.getNextManifestDocNo();
@@ -240,6 +255,25 @@ export class DataController {
   @Post('user-requests/:id/complete')
   completeUserRequest(@Param('id') id: string, @Body() body: { inspectionResults?: any[] }) {
     return this.dataService.completeUserRequest(id, body.inspectionResults);
+  }
+
+  // Inspection Images
+  @Post('user-requests/:id/inspection-images')
+  saveInspectionImage(
+    @Param('id') id: string,
+    @Body() body: { filename: string; mimetype: string; data: string },
+  ) {
+    return this.dataService.saveInspectionImage(id, body.filename, body.mimetype, body.data);
+  }
+
+  @Get('user-requests/:id/inspection-images')
+  getInspectionImages(@Param('id') id: string) {
+    return this.dataService.getInspectionImages(id);
+  }
+
+  @Delete('inspection-images/:id')
+  deleteInspectionImage(@Param('id') id: string) {
+    return this.dataService.deleteInspectionImage(id);
   }
 
   // Inventory / Equipment Status

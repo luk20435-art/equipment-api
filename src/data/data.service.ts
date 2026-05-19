@@ -1004,6 +1004,131 @@ export class DataService {
   }
 
   // ============================================================
+  // Dashboard KPI (user requests stats)
+  // ============================================================
+
+  async getUserRequestStats() {
+    try {
+      const result = await this.pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'in_use')                             AS in_use,
+          COUNT(*) FILTER (WHERE status = 'in_use' AND end_date < NOW())         AS overdue,
+          COUNT(*) FILTER (WHERE status IN ('pending_return', 'returning'))      AS pending_return,
+          COUNT(*) FILTER (WHERE status = 'waiting_pickup')                     AS waiting_pickup,
+          COUNT(*) FILTER (WHERE status = 'pending')                            AS pending_approval
+        FROM user_requests
+        WHERE type = 'equipment'
+      `);
+      const r = result.rows[0];
+      return {
+        inUse:           parseInt(r.in_use, 10),
+        overdue:         parseInt(r.overdue, 10),
+        pendingReturn:   parseInt(r.pending_return, 10),
+        waitingPickup:   parseInt(r.waiting_pickup, 10),
+        pendingApproval: parseInt(r.pending_approval, 10),
+      };
+    } catch {
+      return { inUse: 0, overdue: 0, pendingReturn: 0, waitingPickup: 0, pendingApproval: 0 };
+    }
+  }
+
+  // ============================================================
+  // Unit History
+  // ============================================================
+
+  async getUnitHistory(unitCode: string) {
+    try {
+      const result = await this.pool.query(`
+        SELECT DISTINCT
+          ur.id, ur.status, ur.project_name, ur.start_date, ur.end_date,
+          ur.manifest_to, ur.manifest_doc_no, ur.manifest_date, ur.manifest_ref,
+          ur.backload_doc_no, ur.backload_ref, ur.purpose,
+          ur.created_at, ur.updated_at,
+          u.name AS user_name, u.department AS user_department,
+          eu.unit_code, eu.serial_number,
+          e.name AS equipment_name, e.category
+        FROM user_requests ur
+        JOIN user_request_items ri ON ri.request_id = ur.id
+        JOIN equipment_units eu ON eu.id::text = ANY(
+          SELECT jsonb_array_elements_text(ri.unit_ids::jsonb)
+        )
+        JOIN equipment e ON e.id = eu.equipment_id
+        LEFT JOIN users u ON u.id = ur.user_id
+        WHERE eu.unit_code = $1
+          AND ri.unit_ids IS NOT NULL
+          AND ur.status NOT IN ('pending', 'rejected')
+        ORDER BY ur.created_at DESC
+      `, [unitCode]);
+      return this.snakeToCamel(result.rows);
+    } catch {
+      return [];
+    }
+  }
+
+  // ============================================================
+  // Bookings Calendar
+  // ============================================================
+
+  async getBookingsCalendar() {
+    try {
+      const result = await this.pool.query(`
+        SELECT
+          ur.id, ur.status, ur.project_name, ur.start_date, ur.end_date,
+          ur.manifest_to, ur.purpose,
+          STRING_AGG(DISTINCT e.name, ', ') AS equipment_names
+        FROM user_requests ur
+        JOIN user_request_items ri ON ri.request_id = ur.id AND ri.item_type = 'equipment'
+        LEFT JOIN equipment e ON e.id = ri.equipment_id
+        WHERE ur.type = 'equipment'
+          AND ur.status NOT IN ('pending', 'rejected')
+          AND ur.start_date IS NOT NULL
+        GROUP BY ur.id
+        ORDER BY ur.start_date
+      `);
+      return this.snakeToCamel(result.rows);
+    } catch {
+      return [];
+    }
+  }
+
+  // ============================================================
+  // Inspection Images (stored as base64 TEXT in PostgreSQL)
+  // Migration: CREATE TABLE IF NOT EXISTS inspection_images (
+  //   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  //   request_id UUID NOT NULL, filename TEXT NOT NULL,
+  //   mimetype VARCHAR(100) NOT NULL DEFAULT 'image/jpeg',
+  //   data TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW()
+  // );
+  // ============================================================
+
+  async saveInspectionImage(requestId: string, filename: string, mimetype: string, dataBase64: string) {
+    const result = await this.pool.query(
+      `INSERT INTO inspection_images (request_id, filename, mimetype, data)
+       VALUES ($1, $2, $3, $4) RETURNING id, filename, mimetype, created_at`,
+      [requestId, filename, mimetype, dataBase64],
+    );
+    return this.snakeToCamel(result.rows[0]);
+  }
+
+  async getInspectionImages(requestId: string) {
+    try {
+      const result = await this.pool.query(
+        `SELECT id, request_id, filename, mimetype, data, created_at
+         FROM inspection_images WHERE request_id = $1 ORDER BY created_at`,
+        [requestId],
+      );
+      return this.snakeToCamel(result.rows);
+    } catch {
+      return [];
+    }
+  }
+
+  async deleteInspectionImage(id: string) {
+    await this.pool.query(`DELETE FROM inspection_images WHERE id = $1`, [id]);
+    return { success: true };
+  }
+
+  // ============================================================
   // Inventory / Equipment Status
   // ============================================================
 
