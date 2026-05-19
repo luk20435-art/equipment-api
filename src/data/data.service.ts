@@ -1020,27 +1020,43 @@ export class DataService {
       ORDER BY eq.category, eq.code, eu.unit_no NULLS LAST
     `;
 
-    // Fallback: no request data — used when user_requests/unit_ids migration not yet applied
-    const simpleSql = `
-      SELECT
-        eq.id AS equipment_id, eq.category,
-        eq.code AS equipment_code, eq.name AS equipment_name,
-        eq.trade_name, eq.dimensions,
-        eu.id AS unit_id, eu.unit_no, eu.unit_code, eu.serial_number,
-        eu.total_usage_hours, eu.dimension, eu.weight,
-        eu.status AS unit_status
-      FROM equipment eq
-      JOIN equipment_units eu ON eu.equipment_id = eq.id
-      ${conditions}
-      ORDER BY eq.category, eq.code, eu.unit_no NULLS LAST
-    `;
-
     try {
       const result = await this.pool.query(fullSql, params);
       return this.snakeToCamel(result.rows);
     } catch {
-      const result = await this.pool.query(simpleSql, params);
-      return this.snakeToCamel(result.rows);
+      // Fallback: skip optional columns that may not exist in older local schemas
+      try {
+        const result = await this.pool.query(`
+          SELECT
+            eq.id AS equipment_id, eq.category,
+            eq.code AS equipment_code, eq.name AS equipment_name,
+            NULL AS trade_name, eq.dimensions,
+            eu.id AS unit_id, eu.unit_no, eu.unit_code, eu.serial_number,
+            eu.total_usage_hours, eu.dimension, eu.weight,
+            eu.status AS unit_status
+          FROM equipment eq
+          JOIN equipment_units eu ON eu.equipment_id = eq.id
+          ${conditions}
+          ORDER BY eq.category, eq.code, eu.unit_no NULLS LAST
+        `, params);
+        return this.snakeToCamel(result.rows);
+      } catch {
+        // Last resort: only guaranteed columns
+        const result = await this.pool.query(`
+          SELECT
+            eq.id AS equipment_id, eq.category,
+            eq.code AS equipment_code, eq.name AS equipment_name,
+            NULL AS trade_name, NULL AS dimensions,
+            eu.id AS unit_id, eu.unit_no, eu.unit_code, eu.serial_number,
+            eu.total_usage_hours, NULL AS dimension, NULL AS weight,
+            eu.status AS unit_status
+          FROM equipment eq
+          JOIN equipment_units eu ON eu.equipment_id = eq.id
+          ${conditions}
+          ORDER BY eq.category, eq.code, eu.unit_no NULLS LAST
+        `, params);
+        return this.snakeToCamel(result.rows);
+      }
     }
   }
 }
