@@ -187,6 +187,11 @@ export class DataController {
     return this.dataService.getNextManifestDocNo();
   }
 
+  @Get('user-requests/next-backload-doc-no')
+  getNextBackloadDocNo() {
+    return this.dataService.getNextBackloadDocNo();
+  }
+
   @Get('user-requests/:id')
   getUserRequestById(@Param('id') id: string) {
     return this.dataService.getUserRequests({ id } as any).then((rows: any[]) => rows[0] ?? null);

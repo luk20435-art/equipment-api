@@ -933,6 +933,18 @@ export class DataService {
     finally { client.release(); }
   }
 
+  async getNextBackloadDocNo() {
+    const result = await this.pool.query(
+      `SELECT COALESCE(COUNT(*), 0) + 1 AS next_seq FROM user_requests WHERE backload_doc_no IS NOT NULL`,
+    );
+    const seq = parseInt(result.rows[0].next_seq, 10);
+    const year = new Date().getFullYear();
+    return {
+      docNo: `EQ.BL/${year}-${String(seq).padStart(4, '0')}`,
+      seq,
+    };
+  }
+
   async getNextManifestDocNo() {
     const result = await this.pool.query(
       `SELECT COALESCE(MAX(manifest_seq_no), 0) + 1 AS next_seq FROM user_requests`,
@@ -955,7 +967,21 @@ export class DataService {
     manifest_attn?: string; manifest_cc?: string; manifest_carrier?: string;
     manifest_truck?: string; manifest_on?: string; manifest_ref?: string;
     manifest_responsible?: string;
+    backload_doc_no?: string; backload_ref?: string;
   }) {
+    // Backload-only update (only backload fields provided)
+    if (fields.backload_doc_no !== undefined || fields.backload_ref !== undefined) {
+      const result = await this.pool.query(
+        `UPDATE user_requests SET
+          backload_doc_no = COALESCE($2, backload_doc_no),
+          backload_ref    = COALESCE($3, backload_ref),
+          updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [id, fields.backload_doc_no ?? null, fields.backload_ref ?? null],
+      );
+      return this.snakeToCamel(result.rows[0]);
+    }
+
     const result = await this.pool.query(
       `UPDATE user_requests SET
         manifest_to = $2, manifest_doc_no = $3, manifest_date = $4,
