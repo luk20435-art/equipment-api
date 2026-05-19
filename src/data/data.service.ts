@@ -933,6 +933,23 @@ export class DataService {
     finally { client.release(); }
   }
 
+  async getNextManifestDocNo() {
+    const result = await this.pool.query(
+      `SELECT COALESCE(MAX(manifest_seq_no), 0) + 1 AS next_seq FROM user_requests`,
+    );
+    const seq: number = result.rows[0].next_seq;
+    const year = new Date().getFullYear();
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = String(year);
+    return {
+      docNo: `EQ.${year}-${String(seq).padStart(4, '0')}`,
+      ref: `ON/${String(seq).padStart(3, '0')}-${dd}/${mm}/${yyyy}`,
+      seq,
+    };
+  }
+
   async updateManifest(id: string, fields: {
     manifest_to?: string; manifest_doc_no?: string; manifest_date?: string;
     manifest_attn?: string; manifest_cc?: string; manifest_carrier?: string;

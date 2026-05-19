@@ -182,6 +182,11 @@ export class DataController {
     return this.dataService.getUserRequests({ status, userId, type });
   }
 
+  @Get('user-requests/next-doc-no')
+  getNextManifestDocNo() {
+    return this.dataService.getNextManifestDocNo();
+  }
+
   @Get('user-requests/:id')
   getUserRequestById(@Param('id') id: string) {
     return this.dataService.getUserRequests({ id } as any).then((rows: any[]) => rows[0] ?? null);
