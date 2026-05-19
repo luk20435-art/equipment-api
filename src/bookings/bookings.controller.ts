@@ -9,10 +9,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequiresPage } from '../auth/require-page.decorator';
 import { BookingsService } from './bookings.service';
 
-@UseGuards(JwtAuthGuard)
-
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('bookings')
 export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
@@ -37,11 +38,13 @@ export class BookingsController {
     return this.bookingsService.create(data);
   }
 
+  @RequiresPage('/bookings/approve-requests')
   @Post(':id/approve')
   async approve(@Param('id') id: string, @Body('approverId') approverId: string) {
     return this.bookingsService.approve(id, approverId);
   }
 
+  @RequiresPage('/bookings/approve-requests')
   @Post(':id/reject')
   async reject(@Param('id') id: string, @Body('reason') reason: string) {
     return this.bookingsService.reject(id, reason);

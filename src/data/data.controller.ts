@@ -1,13 +1,18 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, BadRequestException, Req } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequiresPage } from '../auth/require-page.decorator';
 import { DataService } from './data.service';
+import { PermissionsService } from '../permissions/permissions.service';
 
-@UseGuards(JwtAuthGuard)
-
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller()
 export class DataController {
-  constructor(private readonly dataService: DataService) {}
+  constructor(
+    private readonly dataService: DataService,
+    private readonly permissionsService: PermissionsService,
+  ) {}
 
   // Stock Items
   @Get('stock-items')
@@ -25,6 +30,7 @@ export class DataController {
     return this.dataService.getStockHistory(id);
   }
 
+  @RequiresPage('/inventory/stock')
   @Post('stock-items/:id/add-quantity')
   addStockQuantity(
     @Param('id') id: string,
@@ -38,16 +44,19 @@ export class DataController {
     return this.dataService.getStockItemById(id);
   }
 
+  @RequiresPage('/inventory/stock')
   @Post('stock-items')
   createStockItem(@Body() data: any) {
     return this.dataService.createStockItem(data);
   }
 
+  @RequiresPage('/inventory/stock')
   @Put('stock-items/:id')
   updateStockItem(@Param('id') id: string, @Body() data: any) {
     return this.dataService.updateStockItem(id, data);
   }
 
+  @RequiresPage('/inventory/stock')
   @Delete('stock-items/:id')
   deleteStockItem(@Param('id') id: string) {
     return this.dataService.deleteStockItem(id);
@@ -64,6 +73,7 @@ export class DataController {
     return this.dataService.createRequisition(data);
   }
 
+  @RequiresPage('/bookings/fulfill')
   @Put('requisitions/:id')
   updateRequisition(@Param('id') id: string, @Body() data: any) {
     return this.dataService.updateRequisition(id, data);
@@ -80,6 +90,7 @@ export class DataController {
     return this.dataService.createBookingReturn(data);
   }
 
+  @RequiresPage('/bookings/return-inspection')
   @Put('booking-returns/:id')
   inspectBookingReturn(@Param('id') id: string, @Body() data: any) {
     return this.dataService.inspectBookingReturn(id, data);
@@ -91,16 +102,19 @@ export class DataController {
     return this.dataService.getBrands();
   }
 
+  @RequiresPage('/inventory/stock')
   @Post('brands')
   createBrand(@Body() data: any) {
     return this.dataService.createBrand(data);
   }
 
+  @RequiresPage('/inventory/stock')
   @Put('brands/:id')
   updateBrand(@Param('id') id: string, @Body() data: any) {
     return this.dataService.updateBrand(id, data);
   }
 
+  @RequiresPage('/inventory/stock')
   @Delete('brands/:id')
   deleteBrand(@Param('id') id: string) {
     return this.dataService.deleteBrand(id);
@@ -112,11 +126,13 @@ export class DataController {
     return this.dataService.getProjects({ status });
   }
 
+  @RequiresPage('/inventory/stock')
   @Post('projects')
   createProject(@Body() data: any) {
     return this.dataService.createProject(data);
   }
 
+  @RequiresPage('/inventory/stock')
   @Put('projects/:id')
   updateProject(@Param('id') id: string, @Body() data: any) {
     return this.dataService.updateProject(id, data);
@@ -145,27 +161,32 @@ export class DataController {
     return this.dataService.getEquipmentUnits({ equipmentId });
   }
 
+  @RequiresPage('/inventory/stock')
   @Post('equipment-units')
   createEquipmentUnit(@Body() data: any) {
     return this.dataService.createEquipmentUnit(data);
   }
 
+  @RequiresPage('/inventory/stock')
   @Put('equipment-units/:id')
   updateEquipmentUnit(@Param('id') id: string, @Body() data: any) {
     return this.dataService.updateEquipmentUnit(id, data);
   }
 
+  @RequiresPage('/inventory/stock')
   @Delete('equipment-units/:id')
   deleteEquipmentUnit(@Param('id') id: string) {
     return this.dataService.deleteEquipmentUnit(id);
   }
 
   // Users
+  @RequiresPage('/users/manage')
   @Get('users')
   getUsers() {
     return this.dataService.getUsers();
   }
 
+  @RequiresPage('/users/manage')
   @Post('users')
   async createUser(@Body() body: { name: string; email: string; role: string; department?: string; password: string }) {
     if (!body.name || !body.email || !body.password) throw new BadRequestException('name, email and password are required');
@@ -173,31 +194,45 @@ export class DataController {
     return this.dataService.createUserAccount({ name: body.name, email: body.email, role: body.role ?? 'user', department: body.department, password_hash });
   }
 
+  @RequiresPage('/users/manage')
   @Put('users/:id')
   updateUser(@Param('id') id: string, @Body() data: { name?: string; role?: string; department?: string; is_active?: boolean }) {
     return this.dataService.updateUserAccount(id, data);
   }
 
+  @RequiresPage('/users/manage')
   @Delete('users/:id')
   deleteUser(@Param('id') id: string) {
     return this.dataService.deleteUser(id);
   }
 
   // Permissions
+  @RequiresPage('/settings/permissions')
   @Get('settings/permissions')
   getPermissions() {
     return this.dataService.getPermissions();
   }
 
+  @RequiresPage('/settings/permissions')
   @Post('settings/permissions')
-  savePermissions(@Body() body: { permissions: Record<string, string[]> }) {
-    return this.dataService.savePermissions(body.permissions);
+  async savePermissions(@Body() body: { permissions: Record<string, string[]> }) {
+    const result = await this.dataService.savePermissions(body.permissions);
+    this.permissionsService.invalidate();
+    return result;
   }
 
   // User Requests (ผู้ใช้ขอใช้อุปกรณ์/วัสดุ)
   @Get('user-requests')
-  getUserRequests(@Query('status') status?: string, @Query('userId') userId?: string, @Query('type') type?: string) {
-    return this.dataService.getUserRequests({ status, userId, type });
+  getUserRequests(
+    @Query('status') status?: string,
+    @Query('userId') userId?: string,
+    @Query('type') type?: string,
+    @Req() req?: any,
+  ) {
+    const me = req?.user;
+    const isManager = ['admin', 'executive', 'dept_head'].includes(me?.role);
+    const effectiveUserId = isManager ? userId : me?.id;
+    return this.dataService.getUserRequests({ status, userId: effectiveUserId, type });
   }
 
   @Get('user-requests/stats')
@@ -235,21 +270,25 @@ export class DataController {
     return this.dataService.createUserRequest(data);
   }
 
+  @RequiresPage('/bookings/approve-requests')
   @Post('user-requests/:id/approve')
   approveUserRequest(@Param('id') id: string, @Body() body: { approvedBy: string }) {
     return this.dataService.approveUserRequest(id, body.approvedBy);
   }
 
+  @RequiresPage('/bookings/approve-requests')
   @Post('user-requests/:id/reject')
   rejectUserRequest(@Param('id') id: string, @Body() body: { reason: string }) {
     return this.dataService.rejectUserRequest(id, body.reason);
   }
 
+  @RequiresPage('/bookings/fulfill')
   @Post('user-requests/:id/fulfill')
   fulfillUserRequest(@Param('id') id: string, @Body() body: { fulfilledBy: string; fulfillments: any[]; manifest?: any }) {
     return this.dataService.fulfillUserRequest(id, body.fulfilledBy, body.fulfillments, body.manifest);
   }
 
+  @RequiresPage('/bookings/fulfill')
   @Patch('user-requests/:id/manifest')
   updateManifest(@Param('id') id: string, @Body() body: any) {
     return this.dataService.updateManifest(id, body);
@@ -270,6 +309,7 @@ export class DataController {
     return this.dataService.returnUserRequest(id);
   }
 
+  @RequiresPage('/bookings/return-inspection')
   @Post('user-requests/:id/complete')
   completeUserRequest(@Param('id') id: string, @Body() body: { inspectionResults?: any[] }) {
     return this.dataService.completeUserRequest(id, body.inspectionResults);
@@ -289,6 +329,7 @@ export class DataController {
     return this.dataService.getInspectionImages(id);
   }
 
+  @RequiresPage('/bookings/return-inspection')
   @Delete('inspection-images/:id')
   deleteInspectionImage(@Param('id') id: string) {
     return this.dataService.deleteInspectionImage(id);

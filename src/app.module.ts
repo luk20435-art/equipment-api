@@ -5,6 +5,7 @@ import { EquipmentModule } from './equipment/equipment.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { DataModule } from './data/data.module';
+import { PermissionsModule } from './permissions/permissions.module';
 import { DbService } from './common/db.service';
 
 @Module({
@@ -13,6 +14,7 @@ import { DbService } from './common/db.service';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    PermissionsModule,
     AuthModule,
     EquipmentModule,
     BookingsModule,

@@ -10,10 +10,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequiresPage } from '../auth/require-page.decorator';
 import { EquipmentService } from './equipment.service';
 
-@UseGuards(JwtAuthGuard)
-
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('equipment')
 export class EquipmentController {
   constructor(private readonly equipmentService: EquipmentService) {}
@@ -40,21 +41,25 @@ export class EquipmentController {
     return this.equipmentService.findOne(id);
   }
 
+  @RequiresPage('/equipment')
   @Post()
   async create(@Body() data: any) {
     return this.equipmentService.create(data);
   }
 
+  @RequiresPage('/equipment')
   @Put(':id')
   async update(@Param('id') id: string, @Body() data: any) {
     return this.equipmentService.update(id, data);
   }
 
+  @RequiresPage('/equipment')
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.equipmentService.remove(id);
   }
 
+  @RequiresPage('/equipment')
   @Post('seed/init')
   async seedEquipment() {
     return this.equipmentService.seedEquipment();
