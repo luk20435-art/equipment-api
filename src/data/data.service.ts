@@ -156,6 +156,40 @@ export class DataService {
     return this.queryOne(`DELETE FROM stock_items WHERE id = $1 RETURNING *`, [id]);
   }
 
+  // Stock addition history
+  // Migration: CREATE TABLE IF NOT EXISTS stock_additions (
+  //   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  //   stock_item_id UUID NOT NULL, quantity_added INTEGER NOT NULL,
+  //   note TEXT, added_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+  // );
+  async addStockQuantity(id: string, quantity: number, note?: string, addedBy?: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const updated = await client.query(
+        `UPDATE stock_items SET quantity = quantity + $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [id, quantity],
+      );
+      await client.query(
+        `INSERT INTO stock_additions (stock_item_id, quantity_added, note, added_by) VALUES ($1, $2, $3, $4)`,
+        [id, quantity, note ?? null, addedBy ?? null],
+      ).catch(() => {}); // silently skip if table not yet migrated
+      await client.query('COMMIT');
+      return this.snakeToCamel(updated.rows[0]);
+    } catch (err) { await client.query('ROLLBACK'); throw err; }
+    finally { client.release(); }
+  }
+
+  async getStockHistory(id: string) {
+    try {
+      const result = await this.pool.query(
+        `SELECT id, quantity_added, note, added_by, created_at FROM stock_additions WHERE stock_item_id = $1 ORDER BY created_at DESC LIMIT 50`,
+        [id],
+      );
+      return this.snakeToCamel(result.rows);
+    } catch { return []; }
+  }
+
   // Requisitions
   async getRequisitions(filters?: { status?: string; userId?: string }) {
     const conditions: string[] = [];

@@ -20,6 +20,19 @@ export class DataController {
     return this.dataService.getNextStockCode();
   }
 
+  @Get('stock-items/:id/history')
+  getStockHistory(@Param('id') id: string) {
+    return this.dataService.getStockHistory(id);
+  }
+
+  @Post('stock-items/:id/add-quantity')
+  addStockQuantity(
+    @Param('id') id: string,
+    @Body() body: { quantity: number; note?: string; addedBy?: string },
+  ) {
+    return this.dataService.addStockQuantity(id, body.quantity, body.note, body.addedBy);
+  }
+
   @Get('stock-items/:id')
   getStockItemById(@Param('id') id: string) {
     return this.dataService.getStockItemById(id);
