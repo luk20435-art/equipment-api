@@ -967,7 +967,8 @@ export class DataService {
   async getEquipmentInventory(equipmentId?: string) {
     const conditions = equipmentId ? 'WHERE eq.id = $1' : '';
     const params = equipmentId ? [equipmentId] : [];
-    const result = await this.pool.query(`
+
+    const fullSql = `
       SELECT
         eq.id            AS equipment_id,
         eq.category,
@@ -1017,8 +1018,30 @@ export class DataService {
       ) req ON true
       ${conditions}
       ORDER BY eq.category, eq.code, eu.unit_no NULLS LAST
-    `, params);
-    return this.snakeToCamel(result.rows);
+    `;
+
+    // Fallback: no request data — used when user_requests/unit_ids migration not yet applied
+    const simpleSql = `
+      SELECT
+        eq.id AS equipment_id, eq.category,
+        eq.code AS equipment_code, eq.name AS equipment_name,
+        eq.trade_name, eq.dimensions,
+        eu.id AS unit_id, eu.unit_no, eu.unit_code, eu.serial_number,
+        eu.total_usage_hours, eu.dimension, eu.weight,
+        eu.status AS unit_status
+      FROM equipment eq
+      JOIN equipment_units eu ON eu.equipment_id = eq.id
+      ${conditions}
+      ORDER BY eq.category, eq.code, eu.unit_no NULLS LAST
+    `;
+
+    try {
+      const result = await this.pool.query(fullSql, params);
+      return this.snakeToCamel(result.rows);
+    } catch {
+      const result = await this.pool.query(simpleSql, params);
+      return this.snakeToCamel(result.rows);
+    }
   }
 }
 
