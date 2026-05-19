@@ -488,7 +488,7 @@ export class DataService {
     }
   }
 
-  async updateEquipmentUnit(id: string, data: { unit_code?: string; serial_number?: string; total_usage_hours?: number; notes?: string; status?: string }) {
+  async updateEquipmentUnit(id: string, data: { unit_code?: string; serial_number?: string; total_usage_hours?: number; notes?: string; status?: string; dimension?: string; weight?: number }) {
     const keys = Object.keys(data).filter((k) => (data as any)[k] !== undefined);
     if (keys.length === 0) return this.queryOne(`SELECT * FROM equipment_units WHERE id = $1`, [id]);
     const values = keys.map((k) => (data as any)[k]);
@@ -632,7 +632,8 @@ export class DataService {
               'fulfilled_quantity', ri.fulfilled_quantity${unitIdsField},
               'unit_details', (
                 SELECT COALESCE(json_agg(json_build_object(
-                  'id', eu.id, 'unit_code', eu.unit_code, 'serial_number', eu.serial_number, 'unit_no', eu.unit_no
+                  'id', eu.id, 'unit_code', eu.unit_code, 'serial_number', eu.serial_number, 'unit_no', eu.unit_no,
+                  'dimension', eu.dimension, 'weight', eu.weight
                 ) ORDER BY eu.unit_no), '[]')
                 FROM equipment_units eu
                 WHERE ri.unit_ids IS NOT NULL
@@ -979,6 +980,8 @@ export class DataService {
         eu.unit_code,
         eu.serial_number,
         eu.total_usage_hours,
+        eu.dimension,
+        eu.weight,
         eu.status        AS unit_status,
         req.manifest_ref,
         req.manifest_doc_no,
