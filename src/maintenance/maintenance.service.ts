@@ -50,4 +50,10 @@ export class MaintenanceService {
     if (result.error) throw new Error(result.error.message);
     return result.data;
   }
+
+  async delete(id: string) {
+    const result = await this.supabaseService.deleteMaintenance(id);
+    if (result.error) throw new NotFoundException('Maintenance record not found');
+    return { success: true };
+  }
 }

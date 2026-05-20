@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -48,5 +49,11 @@ export class MaintenanceController {
     @Body('cost') cost?: number,
   ) {
     return this.maintenanceService.complete(id, notes, cost);
+  }
+
+  @RequiresPage('/maintenance/pm-schedule')
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    return this.maintenanceService.delete(id);
   }
 }

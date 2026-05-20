@@ -338,6 +338,13 @@ export class DbService {
     }
   }
 
+  async deleteMaintenance(id: string) {
+    return this.queryOne(
+      `DELETE FROM maintenance_records WHERE id = $1 RETURNING id`,
+      [id],
+    );
+  }
+
   // Dashboard stats
   async getDashboardStats() {
     const [equipmentCount, availableCount, activeBookings, pendingApprovals] =

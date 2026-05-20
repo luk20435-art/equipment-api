@@ -206,8 +206,7 @@ export class DataController {
     return this.dataService.deleteUser(id);
   }
 
-  // Permissions
-  @RequiresPage('/settings/permissions')
+  // Permissions — GET is open to all authenticated users (sidebar uses it to build nav)
   @Get('settings/permissions')
   getPermissions() {
     return this.dataService.getPermissions();
