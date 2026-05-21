@@ -24,6 +24,16 @@ export class DataService {
     this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS brand TEXT`).catch(() => {});
     this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS max_quantity INTEGER DEFAULT 0`).catch(() => {});
     this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS document_url TEXT`).catch(() => {});
+    // Equipment subcategories
+    this.pool.query(`
+      CREATE TABLE IF NOT EXISTS equipment_subcategories (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        category VARCHAR(100) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)`).catch(() => {});
   }
 
   private snakeToCamel(obj: any): any {
@@ -381,6 +391,41 @@ export class DataService {
     } finally {
       client.release();
     }
+  }
+
+  // Equipment Subcategories
+  async getEquipmentSubcategories(category?: string) {
+    if (category) {
+      return this.query(
+        `SELECT * FROM equipment_subcategories WHERE category = $1 ORDER BY name ASC`,
+        [category],
+      );
+    }
+    return this.query(`SELECT * FROM equipment_subcategories ORDER BY category ASC, name ASC`);
+  }
+
+  async createEquipmentSubcategory(data: { category: string; name: string }) {
+    return this.queryOne(
+      `INSERT INTO equipment_subcategories (category, name) VALUES ($1, $2) RETURNING *`,
+      [data.category, data.name],
+    );
+  }
+
+  async updateEquipmentSubcategory(id: string, data: { name?: string; category?: string }) {
+    const keys = Object.keys(data);
+    const values = Object.values(data);
+    const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    return this.queryOne(
+      `UPDATE equipment_subcategories SET ${sets} WHERE id = $${keys.length + 1} RETURNING *`,
+      [...values, id],
+    );
+  }
+
+  async deleteEquipmentSubcategory(id: string) {
+    return this.queryOne(
+      `DELETE FROM equipment_subcategories WHERE id = $1 RETURNING id`,
+      [id],
+    );
   }
 
   // Brands
