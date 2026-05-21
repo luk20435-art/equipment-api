@@ -39,6 +39,7 @@ export class DbService {
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS serial_number VARCHAR(100)`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS dimensions VARCHAR(200)`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)`).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment DROP CONSTRAINT IF EXISTS equipment_status_check`).catch(() => {});
   }
 
   private snakeToCamel(obj: any): any {
