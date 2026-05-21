@@ -96,6 +96,22 @@ export class DataController {
     return this.dataService.inspectBookingReturn(id, data);
   }
 
+  // Equipment Name Templates
+  @Get('equipment-name-templates')
+  getEquipmentNameTemplates() {
+    return this.dataService.getEquipmentNameTemplates();
+  }
+
+  @Post('equipment-name-templates')
+  createEquipmentNameTemplate(@Body() body: { name: string }) {
+    return this.dataService.createEquipmentNameTemplate(body.name);
+  }
+
+  @Delete('equipment-name-templates/:id')
+  deleteEquipmentNameTemplate(@Param('id') id: string) {
+    return this.dataService.deleteEquipmentNameTemplate(id);
+  }
+
   // Equipment Subcategories
   @Get('equipment-subcategories')
   getEquipmentSubcategories(@Query('category') category?: string) {

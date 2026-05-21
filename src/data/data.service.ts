@@ -34,6 +34,14 @@ export class DataService {
       )
     `).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)`).catch(() => {});
+    // Equipment name templates
+    this.pool.query(`
+      CREATE TABLE IF NOT EXISTS equipment_name_templates (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(200) NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).catch(() => {});
   }
 
   private snakeToCamel(obj: any): any {
@@ -391,6 +399,26 @@ export class DataService {
     } finally {
       client.release();
     }
+  }
+
+  // Equipment Name Templates
+  async getEquipmentNameTemplates() {
+    return this.query(`SELECT * FROM equipment_name_templates ORDER BY name ASC`);
+  }
+
+  async createEquipmentNameTemplate(name: string) {
+    try {
+      return await this.queryOne(
+        `INSERT INTO equipment_name_templates (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING *`,
+        [name],
+      );
+    } catch (err: any) {
+      throw new Error(err.message);
+    }
+  }
+
+  async deleteEquipmentNameTemplate(id: string) {
+    return this.queryOne(`DELETE FROM equipment_name_templates WHERE id = $1 RETURNING id`, [id]);
   }
 
   // Equipment Subcategories
