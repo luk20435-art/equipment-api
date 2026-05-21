@@ -35,6 +35,10 @@ export class DbService {
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS accessories TEXT`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS received_date DATE`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS document_url TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS trade_name VARCHAR(200)`).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS serial_number VARCHAR(100)`).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS dimensions VARCHAR(200)`).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)`).catch(() => {});
   }
 
   private snakeToCamel(obj: any): any {
