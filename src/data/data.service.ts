@@ -19,6 +19,11 @@ export class DataService {
         password: this.configService.get<string>('DB_PASSWORD'),
       });
     }
+
+    // Stock items — new columns
+    this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS brand TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS max_quantity INTEGER DEFAULT 0`).catch(() => {});
+    this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS document_url TEXT`).catch(() => {});
   }
 
   private snakeToCamel(obj: any): any {
@@ -111,7 +116,7 @@ export class DataService {
   }
 
   async createStockItem(data: any) {
-    const allowed = ['name','code','category','unit','quantity','min_quantity','location','description','image_url'];
+    const allowed = ['name','code','category','unit','quantity','min_quantity','max_quantity','location','description','image_url','brand','document_url'];
     const entries = Object.entries(data).filter(([k, v]) => allowed.includes(k) && v !== undefined);
     if (entries.length === 0) throw new Error('No valid fields provided');
     const keys = entries.map(([k]) => k);
@@ -140,7 +145,7 @@ export class DataService {
   }
 
   async updateStockItem(id: string, data: any) {
-    const allowed = ['name','code','category','unit','quantity','min_quantity','location','description','image_url'];
+    const allowed = ['name','code','category','unit','quantity','min_quantity','max_quantity','location','description','image_url','brand','document_url'];
     const entries = Object.entries(data).filter(([k, v]) => allowed.includes(k) && v !== undefined);
     if (entries.length === 0) throw new Error('No valid fields provided');
     const keys = entries.map(([k]) => k);
