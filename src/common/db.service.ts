@@ -28,6 +28,7 @@ export class DbService {
 
     this.pool.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source VARCHAR(50) DEFAULT 'cart'`).catch(() => {});
     this.pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`).catch(() => {});
+    this.pool.query(`ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS unit_id UUID REFERENCES equipment_units(id) ON DELETE SET NULL`).catch(() => {});
   }
 
   private snakeToCamel(obj: any): any {
@@ -261,10 +262,12 @@ export class DbService {
     const sql = `
       SELECT m.*,
         row_to_json(e.*) as equipment,
-        row_to_json(u.*) as technician
+        row_to_json(u.*) as technician,
+        row_to_json(eu.*) as unit
       FROM maintenance_records m
       LEFT JOIN equipment e ON m.equipment_id = e.id
       LEFT JOIN users u ON m.technician_id = u.id
+      LEFT JOIN equipment_units eu ON m.unit_id = eu.id
       ${where}
       ORDER BY m.scheduled_date ASC
     `;
