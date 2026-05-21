@@ -141,7 +141,9 @@ export class DbService {
 
   async createEquipment(data: any) {
     const keys = Object.keys(data);
-    const values = Object.values(data);
+    const values = Object.values(data).map((v) =>
+      v !== null && typeof v === 'object' ? JSON.stringify(v) : v,
+    );
     const cols = keys.join(', ');
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
     return this.queryOne(
