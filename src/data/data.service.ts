@@ -548,12 +548,23 @@ export class DataService {
   }
 
   async getDashboardStats() {
-    const [equipment, bookings, maintenance, stock] = await Promise.all([
+    const [equipment, bookings, maintenance, stock, units] = await Promise.all([
       this.pool.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status = 'available') AS available FROM equipment`),
       this.pool.query(`SELECT COUNT(*) FILTER (WHERE status = 'pending') AS pending, COUNT(*) FILTER (WHERE status = 'active') AS active FROM bookings`),
       this.pool.query(`SELECT COUNT(*) FILTER (WHERE status IN ('scheduled','in-progress')) AS active FROM maintenance_records`),
       this.pool.query(`SELECT COUNT(*) AS total FROM stock_items`).catch(() => ({ rows: [{ total: 0 }] })),
+      this.pool.query(`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE status = 'available')                              AS available,
+          COUNT(*) FILTER (WHERE status IN ('in-use','reserved','booked'))          AS in_use,
+          COUNT(*) FILTER (WHERE status = 'maintenance')                            AS maintenance,
+          COUNT(*) FILTER (WHERE status IN ('broken','retired'))                    AS rejected,
+          COUNT(*) FILTER (WHERE status NOT IN ('available','in-use','reserved','booked','maintenance','broken','retired')) AS others
+        FROM equipment_units
+      `).catch(() => ({ rows: [{ total: 0, available: 0, in_use: 0, maintenance: 0, rejected: 0, others: 0 }] })),
     ]);
+    const u = units.rows[0];
     return {
       totalEquipment: parseInt(equipment.rows[0].total, 10),
       availableEquipment: parseInt(equipment.rows[0].available, 10),
@@ -561,6 +572,14 @@ export class DataService {
       activeBookings: parseInt(bookings.rows[0].active, 10),
       activeMaintenance: parseInt(maintenance.rows[0].active, 10),
       totalStockItems: parseInt(stock.rows[0].total, 10),
+      units: {
+        total:       parseInt(u.total, 10),
+        available:   parseInt(u.available, 10),
+        inUse:       parseInt(u.in_use, 10),
+        maintenance: parseInt(u.maintenance, 10),
+        rejected:    parseInt(u.rejected, 10),
+        others:      parseInt(u.others, 10),
+      },
     };
   }
 
