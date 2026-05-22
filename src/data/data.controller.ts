@@ -301,6 +301,11 @@ export class DataController {
     return this.dataService.getUserRequests({ id } as any).then((rows: any[]) => rows[0] ?? null);
   }
 
+  @Post('user-requests/direct-manifest')
+  createDirectManifest(@Body() data: any) {
+    return this.dataService.createDirectManifest(data);
+  }
+
   @Post('user-requests')
   createUserRequest(@Body() data: any) {
     return this.dataService.createUserRequest(data);

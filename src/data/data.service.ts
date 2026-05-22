@@ -20,6 +20,24 @@ export class DataService {
       });
     }
 
+    // Manifest extra columns
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS manifest_customer TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS manifest_project TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS manifest_department TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS manifest_no TEXT`).catch(() => {});
+    // Backload extra columns
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_no TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_to TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_attn TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_cc TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_date DATE`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_carrier TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_truck TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_on TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_responsible TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_location TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_project TEXT`).catch(() => {});
+    this.pool.query(`ALTER TABLE user_requests ADD COLUMN IF NOT EXISTS backload_department TEXT`).catch(() => {});
     // Stock items — new columns
     this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS brand TEXT`).catch(() => {});
     this.pool.query(`ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS max_quantity INTEGER DEFAULT 0`).catch(() => {});
@@ -740,6 +758,7 @@ export class DataService {
               'equipment_id', ri.equipment_id, 'stock_item_id', ri.stock_item_id,
               'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url,
               'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit, 'stock_image_url', si.image_url,
+              'stock_category', si.category, 'stock_location', si.location,
               'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
               'fulfilled_quantity', ri.fulfilled_quantity${unitIdsField},
               'unit_details', (
@@ -1074,22 +1093,119 @@ export class DataService {
     };
   }
 
+  async createDirectManifest(data: {
+    userId: string;
+    manifestNo: string;
+    customer: string; attn: string; cc: string; project: string;
+    on: string; ref: string; docNo: string; date: string;
+    carrier: string; truck: string; department: string; responsible: string;
+    items: { equipmentId: string; units: { unitId: string; unitCode: string }[] }[];
+  }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Get next seq no
+      const seqRes = await client.query(
+        `SELECT COALESCE(MAX(manifest_seq_no), 0) + 1 AS next_seq FROM user_requests`,
+      );
+      const seqNo: number = seqRes.rows[0].next_seq;
+
+      // Create user_request
+      const reqRes = await client.query(
+        `INSERT INTO user_requests
+           (user_id, type, purpose, status, fulfilled_by, fulfilled_at,
+            manifest_no, manifest_seq_no, manifest_customer, manifest_to,
+            manifest_attn, manifest_cc, manifest_on, manifest_ref,
+            manifest_doc_no, manifest_date, manifest_carrier, manifest_truck,
+            manifest_department, manifest_responsible, manifest_project,
+            created_at, updated_at)
+         VALUES ($1,'equipment',$2,'waiting_pickup',$1,NOW(),
+                 $3,$4,$5,$5,
+                 $6,$7,$8,$9,
+                 $10,$11::date,$12,$13,
+                 $14,$15,$16,
+                 NOW(),NOW())
+         RETURNING *`,
+        [
+          data.userId, `Manifest ${data.manifestNo}`,
+          data.manifestNo, seqNo, data.customer,
+          data.attn, data.cc, data.on, data.ref,
+          data.docNo, data.date || null, data.carrier, data.truck,
+          data.department, data.responsible, data.project || null,
+        ],
+      );
+      const requestId = reqRes.rows[0].id;
+
+      // Create items + assign units
+      for (const item of data.items) {
+        const unitIds = item.units.map((u) => u.unitId);
+        const itemRes = await client.query(
+          `INSERT INTO user_request_items
+             (request_id, item_type, equipment_id, quantity, unit_ids, fulfilled_quantity)
+           VALUES ($1,'equipment',$2,$3,$4,$3) RETURNING id`,
+          [requestId, item.equipmentId, unitIds.length, JSON.stringify(unitIds)],
+        );
+        const itemId = itemRes.rows[0].id;
+        for (const uid of unitIds) {
+          await client.query(
+            `UPDATE equipment_units SET status='reserved', updated_at=NOW() WHERE id=$1`, [uid],
+          );
+        }
+        if (item.equipmentId) {
+          await client.query(
+            `UPDATE equipment SET available_quantity=(SELECT COUNT(*) FROM equipment_units WHERE equipment_id=$1 AND status='available'), updated_at=NOW() WHERE id=$1`,
+            [item.equipmentId],
+          );
+        }
+        void itemId;
+      }
+
+      await client.query('COMMIT');
+      return this.snakeToCamel(reqRes.rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async updateManifest(id: string, fields: {
     manifest_to?: string; manifest_doc_no?: string; manifest_date?: string;
     manifest_attn?: string; manifest_cc?: string; manifest_carrier?: string;
     manifest_truck?: string; manifest_on?: string; manifest_ref?: string;
-    manifest_responsible?: string;
+    manifest_responsible?: string; manifest_project?: string; manifest_department?: string;
     backload_doc_no?: string; backload_ref?: string;
   }) {
     // Backload-only update (only backload fields provided)
-    if (fields.backload_doc_no !== undefined || fields.backload_ref !== undefined) {
+    if (fields.backload_doc_no !== undefined || fields.backload_ref !== undefined ||
+        (fields as any).backload_no !== undefined) {
+      const f = fields as any;
       const result = await this.pool.query(
         `UPDATE user_requests SET
-          backload_doc_no = COALESCE($2, backload_doc_no),
-          backload_ref    = COALESCE($3, backload_ref),
+          backload_doc_no      = COALESCE($2,  backload_doc_no),
+          backload_ref         = COALESCE($3,  backload_ref),
+          backload_no          = COALESCE($4,  backload_no),
+          backload_to          = COALESCE($5,  backload_to),
+          backload_attn        = COALESCE($6,  backload_attn),
+          backload_cc          = COALESCE($7,  backload_cc),
+          backload_date        = COALESCE($8,  backload_date),
+          backload_carrier     = COALESCE($9,  backload_carrier),
+          backload_truck       = COALESCE($10, backload_truck),
+          backload_on          = COALESCE($11, backload_on),
+          backload_responsible = COALESCE($12, backload_responsible),
+          backload_location    = COALESCE($13, backload_location),
+          backload_project     = COALESCE($14, backload_project),
+          backload_department  = COALESCE($15, backload_department),
           updated_at = NOW()
          WHERE id = $1 RETURNING *`,
-        [id, fields.backload_doc_no ?? null, fields.backload_ref ?? null],
+        [id,
+         fields.backload_doc_no ?? null, fields.backload_ref ?? null,
+         f.backload_no ?? null, f.backload_to ?? null, f.backload_attn ?? null,
+         f.backload_cc ?? null, f.backload_date ?? null, f.backload_carrier ?? null,
+         f.backload_truck ?? null, f.backload_on ?? null, f.backload_responsible ?? null,
+         f.backload_location ?? null, f.backload_project ?? null, f.backload_department ?? null],
       );
       return this.snakeToCamel(result.rows[0]);
     }
@@ -1099,7 +1215,7 @@ export class DataService {
         manifest_to = $2, manifest_doc_no = $3, manifest_date = $4,
         manifest_attn = $5, manifest_cc = $6, manifest_carrier = $7,
         manifest_truck = $8, manifest_on = $9, manifest_ref = $10,
-        manifest_responsible = $11,
+        manifest_responsible = $11, manifest_project = $12, manifest_department = $13,
         manifest_rev_no = COALESCE(manifest_rev_no, 0) + 1,
         manifest_seq_no = CASE WHEN manifest_seq_no IS NULL
           THEN (SELECT COALESCE(MAX(manifest_seq_no), 0) + 1 FROM user_requests)
@@ -1110,7 +1226,7 @@ export class DataService {
        fields.manifest_to ?? null, fields.manifest_doc_no ?? null, fields.manifest_date ?? null,
        fields.manifest_attn ?? null, fields.manifest_cc ?? null, fields.manifest_carrier ?? null,
        fields.manifest_truck ?? null, fields.manifest_on ?? null, fields.manifest_ref ?? null,
-       fields.manifest_responsible ?? null],
+       fields.manifest_responsible ?? null, fields.manifest_project ?? null, fields.manifest_department ?? null],
     );
     return this.snakeToCamel(result.rows[0]);
   }
