@@ -40,6 +40,8 @@ export class DbService {
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS dimensions VARCHAR(200)`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment DROP CONSTRAINT IF EXISTS equipment_status_check`).catch(() => {});
+    this.pool.query(`ALTER TABLE maintenance_records DROP CONSTRAINT IF EXISTS maintenance_records_type_check`).catch(() => {});
+    this.pool.query(`ALTER TABLE maintenance_records DROP CONSTRAINT IF EXISTS maintenance_records_status_check`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS images JSONB DEFAULT '[]'`).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS documents JSONB DEFAULT '[]'`).catch(() => {});
   }
@@ -328,23 +330,16 @@ export class DbService {
 
       const record = result.rows[0];
 
-      // If the record has a unit_id, set unit back to available
       if (record.unit_id) {
         await client.query(
           `UPDATE equipment_units SET status = 'available', updated_at = NOW() WHERE id = $1`,
           [record.unit_id],
         );
-        // Recalculate equipment available_quantity
-        await client.query(
-          `UPDATE equipment
-           SET available_quantity = (
-             SELECT COUNT(*) FROM equipment_units
-             WHERE equipment_id = $1 AND status = 'available'
-           ), updated_at = NOW()
-           WHERE id = $1`,
-          [record.equipment_id],
-        );
       }
+      await client.query(
+        `UPDATE equipment SET status = 'available', updated_at = NOW() WHERE id = $1`,
+        [record.equipment_id],
+      );
 
       await client.query('COMMIT');
       return { data: this.snakeToCamel(record), error: null };
