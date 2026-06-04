@@ -920,6 +920,49 @@ export class DataService {
     }
   }
 
+  async deleteUserRequest(id: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const check = await client.query(
+        `SELECT status, backload_doc_no FROM user_requests WHERE id = $1`, [id],
+      );
+      if (!check.rows[0]) throw new Error('ไม่พบรายการ');
+      const { status, backload_doc_no: backloadDocNo } = check.rows[0];
+      if (backloadDocNo) throw new Error('ไม่สามารถลบได้ เนื่องจากถูกส่งไปยัง Manifest Backload แล้ว');
+      // If not already cancelled, free units first
+      if (status !== 'cancelled') {
+        await client.query(
+          `UPDATE equipment_units SET status = 'available', updated_at = NOW()
+           WHERE id::text IN (
+             SELECT jsonb_array_elements_text(unit_ids::jsonb)
+             FROM user_request_items
+             WHERE request_id = $1 AND unit_ids IS NOT NULL
+           )`, [id],
+        );
+        await client.query(
+          `UPDATE equipment e
+           SET available_quantity = (
+             SELECT COUNT(*) FROM equipment_units WHERE equipment_id = e.id AND status = 'available'
+           ), updated_at = NOW()
+           WHERE e.id IN (
+             SELECT DISTINCT equipment_id FROM user_request_items
+             WHERE request_id = $1 AND equipment_id IS NOT NULL
+           )`, [id],
+        );
+      }
+      await client.query(`DELETE FROM user_request_items WHERE request_id = $1`, [id]);
+      await client.query(`DELETE FROM user_requests WHERE id = $1`, [id]);
+      await client.query('COMMIT');
+      return { success: true };
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      throw new Error(err.message);
+    } finally {
+      client.release();
+    }
+  }
+
   async approveUserRequest(id: string, approvedBy: string) {
     const result = await this.pool.query(
       `UPDATE user_requests SET status = 'approved', approved_by = $2, approved_at = NOW(), updated_at = NOW()

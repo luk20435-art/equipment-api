@@ -321,6 +321,11 @@ export class DataController {
     return this.dataService.cancelUserRequest(id);
   }
 
+  @Delete('user-requests/:id')
+  deleteUserRequest(@Param('id') id: string) {
+    return this.dataService.deleteUserRequest(id);
+  }
+
   @RequiresPage('/bookings/approve-requests')
   @Post('user-requests/:id/approve')
   approveUserRequest(@Param('id') id: string, @Body() body: { approvedBy: string }) {
