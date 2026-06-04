@@ -874,21 +874,23 @@ export class DataService {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      // Only allow cancel if not yet shipped (not in_use/returning/completed)
       const check = await client.query(
-        `SELECT status FROM user_requests WHERE id = $1`, [id],
+        `SELECT status, backload_doc_no FROM user_requests WHERE id = $1`, [id],
       );
       const status = check.rows[0]?.status;
-      if (['returning', 'pending_return', 'completed'].includes(status)) {
-        throw new Error('ไม่สามารถยกเลิกได้ เนื่องจากอยู่ระหว่างการส่งคืนหรือเสร็จสิ้นแล้ว');
-      }
-      // Release all reserved/booked units back to available
+      const backloadDocNo = check.rows[0]?.backload_doc_no;
+      if (status === 'cancelled') throw new Error('รายการนี้ถูกยกเลิกไปแล้ว');
+      if (status === 'completed') throw new Error('ไม่สามารถยกเลิกได้ เนื่องจากเสร็จสิ้นแล้ว');
+      if (backloadDocNo) throw new Error('ไม่สามารถยกเลิกได้ เนื่องจากถูกส่งไปยัง Manifest Backload แล้ว');
+      // Release all reserved/booked units back to available (unit_ids stored as JSONB)
       await client.query(
-        `UPDATE equipment_units eu
+        `UPDATE equipment_units
          SET status = 'available', updated_at = NOW()
-         FROM user_request_items uri
-         JOIN user_request_item_units uriu ON uriu.item_id = uri.id
-         WHERE uriu.unit_id = eu.id AND uri.request_id = $1`,
+         WHERE id::text IN (
+           SELECT jsonb_array_elements_text(unit_ids::jsonb)
+           FROM user_request_items
+           WHERE request_id = $1 AND unit_ids IS NOT NULL
+         )`,
         [id],
       );
       // Update parent equipment available_quantity
@@ -898,10 +900,8 @@ export class DataService {
            SELECT COUNT(*) FROM equipment_units WHERE equipment_id = e.id AND status = 'available'
          ), updated_at = NOW()
          WHERE e.id IN (
-           SELECT DISTINCT eu.equipment_id FROM equipment_units eu
-           JOIN user_request_item_units uriu ON uriu.unit_id = eu.id
-           JOIN user_request_items uri ON uri.id = uriu.item_id
-           WHERE uri.request_id = $1
+           SELECT DISTINCT equipment_id FROM user_request_items
+           WHERE request_id = $1 AND equipment_id IS NOT NULL
          )`,
         [id],
       );
