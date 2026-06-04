@@ -167,7 +167,19 @@ export class DbService {
   }
 
   async deleteEquipment(id: string) {
-    return this.query(`DELETE FROM equipment WHERE id = $1`, [id]);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`DELETE FROM equipment_units WHERE equipment_id = $1`, [id]);
+      const result = await client.query(`DELETE FROM equipment WHERE id = $1`, [id]);
+      await client.query('COMMIT');
+      return { data: result.rows, error: null };
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      return { data: null, error: { message: err.message } };
+    } finally {
+      client.release();
+    }
   }
 
   // Booking queries

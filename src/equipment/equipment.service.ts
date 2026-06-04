@@ -58,11 +58,9 @@ export class EquipmentService {
 
   async remove(id: string) {
     const result = await this.supabaseService.deleteEquipment(id);
-    
     if (result.error) {
-      throw new NotFoundException('Equipment not found');
+      throw new NotFoundException(result.error.message);
     }
-
     return { message: 'Equipment deleted successfully' };
   }
 
