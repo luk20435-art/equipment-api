@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 
@@ -194,6 +194,13 @@ export class DataService {
   }
 
   async deleteStockItem(id: string) {
+    const ref = await this.pool.query(
+      `SELECT COUNT(*) FROM user_request_items WHERE stock_item_id = $1`,
+      [id],
+    );
+    if (parseInt(ref.rows[0].count, 10) > 0) {
+      throw new BadRequestException('ไม่สามารถลบได้ เนื่องจากมีการใช้งานในใบเบิกแล้ว');
+    }
     return this.queryOne(`DELETE FROM stock_items WHERE id = $1 RETURNING *`, [id]);
   }
 
