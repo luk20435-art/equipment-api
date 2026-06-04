@@ -782,7 +782,7 @@ export class DataService {
               'id', ri.id, 'item_type', ri.item_type,
               'quantity', ri.quantity, 'notes', ri.notes,
               'equipment_id', ri.equipment_id, 'stock_item_id', ri.stock_item_id,
-              'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url,
+              'equipment_name', eq.name, 'equipment_code', eq.code, 'equipment_image_url', eq.image_url, 'equipment_dimensions', eq.dimensions, 'equipment_weight', eq.weight,
               'stock_name', si.name, 'stock_code', si.code, 'stock_unit', si.unit, 'stock_image_url', si.image_url,
               'stock_category', si.category, 'stock_location', si.location,
               'booking_id', ri.booking_id, 'requisition_id', ri.requisition_id,
