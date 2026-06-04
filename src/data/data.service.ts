@@ -870,6 +870,56 @@ export class DataService {
     finally { client.release(); }
   }
 
+  async cancelUserRequest(id: string) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Only allow cancel if not yet shipped (not in_use/returning/completed)
+      const check = await client.query(
+        `SELECT status FROM user_requests WHERE id = $1`, [id],
+      );
+      const status = check.rows[0]?.status;
+      if (['returning', 'pending_return', 'completed'].includes(status)) {
+        throw new Error('ไม่สามารถยกเลิกได้ เนื่องจากอยู่ระหว่างการส่งคืนหรือเสร็จสิ้นแล้ว');
+      }
+      // Release all reserved/booked units back to available
+      await client.query(
+        `UPDATE equipment_units eu
+         SET status = 'available', updated_at = NOW()
+         FROM user_request_items uri
+         JOIN user_request_item_units uriu ON uriu.item_id = uri.id
+         WHERE uriu.unit_id = eu.id AND uri.request_id = $1`,
+        [id],
+      );
+      // Update parent equipment available_quantity
+      await client.query(
+        `UPDATE equipment e
+         SET available_quantity = (
+           SELECT COUNT(*) FROM equipment_units WHERE equipment_id = e.id AND status = 'available'
+         ), updated_at = NOW()
+         WHERE e.id IN (
+           SELECT DISTINCT eu.equipment_id FROM equipment_units eu
+           JOIN user_request_item_units uriu ON uriu.unit_id = eu.id
+           JOIN user_request_items uri ON uri.id = uriu.item_id
+           WHERE uri.request_id = $1
+         )`,
+        [id],
+      );
+      // Mark request cancelled
+      const result = await client.query(
+        `UPDATE user_requests SET status = 'cancelled', updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [id],
+      );
+      await client.query('COMMIT');
+      return this.snakeToCamel(result.rows[0]);
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      throw new Error(err.message);
+    } finally {
+      client.release();
+    }
+  }
+
   async approveUserRequest(id: string, approvedBy: string) {
     const result = await this.pool.query(
       `UPDATE user_requests SET status = 'approved', approved_by = $2, approved_at = NOW(), updated_at = NOW()

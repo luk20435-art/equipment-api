@@ -316,6 +316,11 @@ export class DataController {
     return this.dataService.createUserRequest(data);
   }
 
+  @Post('user-requests/:id/cancel')
+  cancelUserRequest(@Param('id') id: string) {
+    return this.dataService.cancelUserRequest(id);
+  }
+
   @RequiresPage('/bookings/approve-requests')
   @Post('user-requests/:id/approve')
   approveUserRequest(@Param('id') id: string, @Body() body: { approvedBy: string }) {
