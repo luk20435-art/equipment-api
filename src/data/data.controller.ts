@@ -296,6 +296,11 @@ export class DataController {
     return this.dataService.getNextBackloadDocNo();
   }
 
+  @Post('user-requests/:id/assign-backload-no')
+  assignBackloadDocNo(@Param('id') id: string) {
+    return this.dataService.assignBackloadDocNo(id);
+  }
+
   @Get('user-requests/:id')
   getUserRequestById(@Param('id') id: string) {
     return this.dataService.getUserRequests({ id } as any).then((rows: any[]) => rows[0] ?? null);

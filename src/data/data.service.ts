@@ -1091,15 +1091,55 @@ export class DataService {
   }
 
   async getNextBackloadDocNo() {
+    const year = new Date().getFullYear();
     const result = await this.pool.query(
-      `SELECT COALESCE(COUNT(*), 0) + 1 AS next_seq FROM user_requests WHERE backload_doc_no IS NOT NULL`,
+      `SELECT COALESCE(MAX(CAST(SPLIT_PART(backload_doc_no, '-', 2) AS INTEGER)), 0) + 1 AS next_seq
+       FROM user_requests
+       WHERE backload_doc_no LIKE $1`,
+      [`EQ.BL/${year}-%`],
     );
     const seq = parseInt(result.rows[0].next_seq, 10);
-    const year = new Date().getFullYear();
     return {
       docNo: `EQ.BL/${year}-${String(seq).padStart(4, '0')}`,
       seq,
     };
+  }
+
+  async assignBackloadDocNo(requestId: string) {
+    const year = new Date().getFullYear();
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Lock to prevent race condition, then assign only if not already set
+      const result = await client.query(
+        `UPDATE user_requests
+         SET backload_doc_no = CONCAT(
+           'EQ.BL/${year}-',
+           LPAD(
+             (SELECT COALESCE(MAX(CAST(SPLIT_PART(backload_doc_no, '-', 2) AS INTEGER)), 0) + 1
+              FROM user_requests WHERE backload_doc_no LIKE 'EQ.BL/${year}-%')::text,
+             4, '0'
+           )
+         )
+         WHERE id = $1 AND (backload_doc_no IS NULL OR backload_doc_no = '')
+         RETURNING backload_doc_no`,
+        [requestId],
+      );
+      await client.query('COMMIT');
+      // If already had a doc_no, fetch it
+      if (result.rows.length === 0) {
+        const existing = await this.pool.query(
+          `SELECT backload_doc_no FROM user_requests WHERE id = $1`, [requestId],
+        );
+        return { docNo: existing.rows[0]?.backload_doc_no ?? null };
+      }
+      return { docNo: result.rows[0].backload_doc_no };
+    } catch (err: any) {
+      await client.query('ROLLBACK');
+      throw new Error(err.message);
+    } finally {
+      client.release();
+    }
   }
 
   async getNextManifestDocNo() {
