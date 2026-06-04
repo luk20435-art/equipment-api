@@ -170,6 +170,10 @@ export class DbService {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      // Nullify FK references so historical records are preserved
+      await client.query(`UPDATE bookings SET equipment_id = NULL WHERE equipment_id = $1`, [id]);
+      await client.query(`UPDATE maintenance_records SET equipment_id = NULL WHERE equipment_id = $1`, [id]).catch(() => {});
+      await client.query(`UPDATE user_request_items SET equipment_id = NULL WHERE equipment_id = $1`, [id]).catch(() => {});
       await client.query(`DELETE FROM equipment_units WHERE equipment_id = $1`, [id]);
       const result = await client.query(`DELETE FROM equipment WHERE id = $1`, [id]);
       await client.query('COMMIT');
