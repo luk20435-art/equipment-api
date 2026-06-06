@@ -112,6 +112,22 @@ export class DataController {
     return this.dataService.deleteEquipmentNameTemplate(id);
   }
 
+  // Equipment Categories
+  @Get('equipment-categories')
+  getEquipmentCategories() {
+    return this.dataService.getEquipmentCategories();
+  }
+
+  @Post('equipment-categories')
+  createEquipmentCategory(@Body() body: { name: string }) {
+    return this.dataService.createEquipmentCategory(body.name);
+  }
+
+  @Delete('equipment-categories/:id')
+  deleteEquipmentCategory(@Param('id') id: string) {
+    return this.dataService.deleteEquipmentCategory(id);
+  }
+
   // Equipment Subcategories
   @Get('equipment-subcategories')
   getEquipmentSubcategories(@Query('category') category?: string) {

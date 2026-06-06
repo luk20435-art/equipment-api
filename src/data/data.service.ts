@@ -60,6 +60,23 @@ export class DataService {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `).catch(() => {});
+
+    // Equipment category templates
+    this.pool.query(`
+      CREATE TABLE IF NOT EXISTS equipment_categories (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(200) NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).then(() => {
+      // Seed default categories if table is empty
+      this.pool.query(`
+        INSERT INTO equipment_categories (name)
+        VALUES ('Welding Machine'),('Generator'),('Air Compressor'),('Air Winch'),
+               ('Container'),('Basket'),('Rack'),('Tool Box'),('Gas')
+        ON CONFLICT (name) DO NOTHING
+      `).catch(() => {});
+    }).catch(() => {});
   }
 
   private snakeToCamel(obj: any): any {
@@ -446,6 +463,22 @@ export class DataService {
     return this.queryOne(`DELETE FROM equipment_name_templates WHERE id = $1 RETURNING id`, [id]);
   }
 
+  // Equipment Categories
+  async getEquipmentCategories() {
+    return this.query(`SELECT * FROM equipment_categories ORDER BY name ASC`);
+  }
+
+  async createEquipmentCategory(name: string) {
+    return this.queryOne(
+      `INSERT INTO equipment_categories (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING *`,
+      [name],
+    );
+  }
+
+  async deleteEquipmentCategory(id: string) {
+    return this.queryOne(`DELETE FROM equipment_categories WHERE id = $1 RETURNING id`, [id]);
+  }
+
   // Equipment Subcategories
   async getEquipmentSubcategories(category?: string) {
     if (category) {
@@ -644,10 +677,11 @@ export class DataService {
     }
   }
 
-  async updateEquipmentUnit(id: string, data: { unit_code?: string; serial_number?: string; total_usage_hours?: number; notes?: string; status?: string; dimension?: string; weight?: number }) {
-    const keys = Object.keys(data).filter((k) => (data as any)[k] !== undefined);
+  async updateEquipmentUnit(id: string, data: Record<string, any>) {
+    const ALLOWED = new Set(['unit_code','serial_number','total_usage_hours','notes','status','dimension','weight']);
+    const keys = Object.keys(data).filter((k) => ALLOWED.has(k) && data[k] !== undefined);
     if (keys.length === 0) return this.queryOne(`SELECT * FROM equipment_units WHERE id = $1`, [id]);
-    const values = keys.map((k) => (data as any)[k]);
+    const values = keys.map((k) => data[k]);
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     return this.queryOne(
       `UPDATE equipment_units SET ${sets}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING *`,
@@ -1336,6 +1370,7 @@ export class DataService {
     manifest_truck?: string; manifest_on?: string; manifest_ref?: string;
     manifest_responsible?: string; manifest_project?: string; manifest_department?: string;
     backload_doc_no?: string; backload_ref?: string;
+    purpose?: string; end_date?: string;
   }) {
     // Backload-only update (only backload fields provided)
     if (fields.backload_doc_no !== undefined || fields.backload_ref !== undefined ||
@@ -1366,6 +1401,17 @@ export class DataService {
          f.backload_truck ?? null, f.backload_on ?? null, f.backload_responsible ?? null,
          f.backload_location ?? null, f.backload_project ?? null, f.backload_department ?? null],
       );
+      // Sync equipment.location when backload_location is set
+      if (f.backload_location) {
+        await this.pool.query(
+          `UPDATE equipment e SET location = $2, updated_at = NOW()
+           FROM user_request_items ri
+           WHERE ri.request_id = $1
+             AND ri.equipment_id = e.id
+             AND ri.equipment_id IS NOT NULL`,
+          [id, f.backload_location],
+        );
+      }
       return this.snakeToCamel(result.rows[0]);
     }
 
@@ -1375,6 +1421,8 @@ export class DataService {
         manifest_attn = $5, manifest_cc = $6, manifest_carrier = $7,
         manifest_truck = $8, manifest_on = $9, manifest_ref = $10,
         manifest_responsible = $11, manifest_project = $12, manifest_department = $13,
+        purpose = COALESCE($14, purpose),
+        end_date = COALESCE($15::date, end_date),
         manifest_rev_no = COALESCE(manifest_rev_no, 0) + 1,
         manifest_seq_no = CASE WHEN manifest_seq_no IS NULL
           THEN (SELECT COALESCE(MAX(manifest_seq_no), 0) + 1 FROM user_requests)
@@ -1385,7 +1433,8 @@ export class DataService {
        fields.manifest_to ?? null, fields.manifest_doc_no ?? null, fields.manifest_date ?? null,
        fields.manifest_attn ?? null, fields.manifest_cc ?? null, fields.manifest_carrier ?? null,
        fields.manifest_truck ?? null, fields.manifest_on ?? null, fields.manifest_ref ?? null,
-       fields.manifest_responsible ?? null, fields.manifest_project ?? null, fields.manifest_department ?? null],
+       fields.manifest_responsible ?? null, fields.manifest_project ?? null, fields.manifest_department ?? null,
+       fields.purpose ?? null, fields.end_date ?? null],
     );
     return this.snakeToCamel(result.rows[0]);
   }
@@ -1556,6 +1605,7 @@ export class DataService {
         eq.name          AS equipment_name,
         eq.trade_name,
         eq.dimensions,
+        eq.location      AS equipment_location,
         eu.id            AS unit_id,
         eu.unit_no,
         eu.unit_code,
@@ -1575,7 +1625,11 @@ export class DataService {
         req.purpose,
         req.fulfilled_quantity,
         req.request_status,
-        req.updated_at   AS request_updated_at
+        req.updated_at   AS request_updated_at,
+        req.backload_location,
+        req.backload_doc_no,
+        req.backload_qty,
+        req.request_id
       FROM equipment eq
       JOIN equipment_units eu ON eu.equipment_id = eq.id
       LEFT JOIN LATERAL (
@@ -1585,7 +1639,13 @@ export class DataService {
           ur.manifest_to, ur.manifest_date, ur.project_name,
           ur.start_date, ur.end_date, ur.purpose,
           ur.status AS request_status,
-          ur.updated_at
+          ur.updated_at,
+          ur.backload_location,
+          ur.backload_doc_no,
+          CASE WHEN ur.backload_doc_no IS NOT NULL THEN
+            COALESCE(jsonb_array_length(ri.unit_ids::jsonb), ri.fulfilled_quantity)
+          ELSE NULL END AS backload_qty,
+          ur.id AS request_id
         FROM user_request_items ri
         JOIN user_requests ur ON ur.id = ri.request_id
         WHERE ri.unit_ids IS NOT NULL
