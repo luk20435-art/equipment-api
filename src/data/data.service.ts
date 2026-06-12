@@ -52,6 +52,8 @@ export class DataService {
       )
     `).catch(() => {});
     this.pool.query(`ALTER TABLE equipment ADD COLUMN IF NOT EXISTS subcategory VARCHAR(100)`).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment_units ADD COLUMN IF NOT EXISTS dimension VARCHAR(200)`).catch(() => {});
+    this.pool.query(`ALTER TABLE equipment_units ADD COLUMN IF NOT EXISTS weight TEXT`).catch(() => {});
     // Equipment name templates
     this.pool.query(`
       CREATE TABLE IF NOT EXISTS equipment_name_templates (
@@ -1332,15 +1334,46 @@ export class DataService {
 
       // Create items + assign units
       for (const item of data.items) {
-        const unitIds = item.units.map((u) => u.unitId);
+        // Resolve each unitId: if it doesn't match a real equipment_units row,
+        // it's a synthetic id (equipment.id used as fallback when that equipment
+        // has no equipment_units rows yet) — create a real unit row for it so
+        // unit_details lookups downstream return correct per-unit data.
+        const resolvedUnitIds: string[] = [];
+        for (const u of item.units) {
+          const existing = await client.query(`SELECT id FROM equipment_units WHERE id = $1`, [u.unitId]);
+          if (existing.rows.length > 0) {
+            resolvedUnitIds.push(u.unitId);
+            continue;
+          }
+          const eqRes = await client.query(`SELECT id, code, dimensions, weight FROM equipment WHERE id = $1`, [u.unitId]);
+          if (eqRes.rows.length === 0) {
+            resolvedUnitIds.push(u.unitId);
+            continue;
+          }
+          const eq = eqRes.rows[0];
+          const nextNoRes = await client.query(
+            `SELECT COALESCE(MAX(unit_no), 0) + 1 AS next_no FROM equipment_units WHERE equipment_id=$1`, [eq.id],
+          );
+          const newUnitRes = await client.query(
+            `INSERT INTO equipment_units (equipment_id, unit_no, unit_code, status, dimension, weight)
+             VALUES ($1,$2,$3,'reserved',$4,$5) RETURNING id`,
+            [eq.id, nextNoRes.rows[0].next_no, u.unitCode || eq.code, eq.dimensions ?? null, eq.weight ?? null],
+          );
+          resolvedUnitIds.push(newUnitRes.rows[0].id);
+          await client.query(
+            `UPDATE equipment SET available_quantity=(SELECT COUNT(*) FROM equipment_units WHERE equipment_id=$1 AND status='available'), updated_at=NOW() WHERE id=$1`,
+            [eq.id],
+          );
+        }
+
         const itemRes = await client.query(
           `INSERT INTO user_request_items
              (request_id, item_type, equipment_id, quantity, unit_ids, fulfilled_quantity)
            VALUES ($1,'equipment',$2,$3,$4,$3) RETURNING id`,
-          [requestId, item.equipmentId, unitIds.length, JSON.stringify(unitIds)],
+          [requestId, item.equipmentId, resolvedUnitIds.length, JSON.stringify(resolvedUnitIds)],
         );
         const itemId = itemRes.rows[0].id;
-        for (const uid of unitIds) {
+        for (const uid of resolvedUnitIds) {
           await client.query(
             `UPDATE equipment_units SET status='reserved', updated_at=NOW() WHERE id=$1`, [uid],
           );
